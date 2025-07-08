@@ -184,3 +184,67 @@ function getResidentDataWithToken(token) {
         return { success: false, error: `Error cargando datos: ${e.message}` };
     }
 }
+
+function verificarEntorno() {
+  const REQUIRED_HEADERS = {
+    RESIDENTES: ["Rut", "Nombre", "Apellidos", "Torre", "Departamento", "PasswordHash", "PasswordSalt"],
+    CONFIGURACION: ["Clave", "Valor"],
+    MENSAJES: ["ID", "Titulo", "Mensaje", "Destinatario"],
+    ENCOMIENDAS: ["Torre", "Departamento", "Estado"],
+    VISITAS: ["Torre", "Departamento", "ID"]
+  };
+  
+  Logger.log("--- INICIANDO CHEQUEO DE SISTEMA ---");
+  
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    Logger.log(`✅ Conexión exitosa con la Hoja de Cálculo: '${ss.getName()}'`);
+    
+    const allGids = Object.keys(SHEETS).map(key => SHEETS[key].gid);
+    const allSheets = ss.getSheets();
+    let allChecksPass = true;
+    
+    for (const sheetName in SHEETS) {
+      const gid = SHEETS[sheetName].gid;
+      const sheet = allSheets.find(s => s.getSheetId() == gid);
+      
+      if (!sheet) {
+        Logger.log(`❌ ERROR CRÍTICO: No se encontró ninguna hoja con el GID ${gid} para '${sheetName}'.`);
+        allChecksPass = false;
+        continue;
+      }
+      
+      Logger.log(`- Verificando hoja '${sheet.getName()}' (para ${sheetName})... OK.`);
+      
+      if (REQUIRED_HEADERS[sheetName]) {
+        if (sheet.getLastRow() < 1) {
+            Logger.log(`  ❌ ERROR: La hoja '${sheet.getName()}' está completamente vacía y no tiene encabezados.`);
+            allChecksPass = false;
+            continue;
+        }
+        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h ? h.trim() : '');
+        
+        REQUIRED_HEADERS[sheetName].forEach(requiredHeader => {
+          if (!headers.includes(requiredHeader)) {
+            Logger.log(`  ❌ ERROR: En la hoja '${sheet.getName()}', falta la columna requerida: '${requiredHeader}'.`);
+            allChecksPass = false;
+          }
+        });
+      }
+    }
+    
+    Logger.log("--- CHEQUEO DE SISTEMA FINALIZADO ---");
+    if (allChecksPass) {
+      Logger.log("✅ ¡FELICIDADES! Todo tu entorno parece estar configurado correctamente. El problema podría ser otro.");
+      SpreadsheetApp.getUi().alert("Chequeo de Sistema", "¡FELICIDADES! Todas las hojas y columnas requeridas fueron encontradas.", SpreadsheetApp.getUi().ButtonSet.OK);
+    } else {
+      Logger.log("❗️ ATENCIÓN: Se encontraron uno o más errores. Revisa el registro de arriba para ver los detalles y corregirlos en tu Google Sheet.");
+      SpreadsheetApp.getUi().alert("Chequeo de Sistema", "¡ATENCIÓN! Se encontraron errores. Revisa los registros (Ver > Registros) para ver los detalles.", SpreadsheetApp.getUi().ButtonSet.OK);
+    }
+
+  } catch (e) {
+    Logger.log("--- ERROR CATASTRÓFICO DURANTE EL CHEQUEO ---");
+    Logger.log(e.message);
+    SpreadsheetApp.getUi().alert("Error Catastrófico", "No se pudo completar el chequeo. Posiblemente el SPREADSHEET_ID es incorrecto o no tienes permisos. Error: " + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
