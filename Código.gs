@@ -1,9 +1,11 @@
 // ==========================================================
-//    PORTAL DE RESIDENTES
+//    PORTAL DE RESIDENTES - BACKEND (v11 - Corrección Final de TypeError)
 // ==========================================================
 
-const SPREADSHEET_ID = '1sGh-wSzD9kw2xLwc-WA5saL46oZtpsHYH6QP57dZuMw'; 
+// IDs PRINCIPALES
+const SPREADSHEET_ID = '1sGh-wSzD9kw2xLwc-WA5saL46oZtpsHYH6QP57dZuMw';
 
+// GIDs DE LAS HOJAS
 const SHEETS = {
   RESIDENTES: { gid: 0 },
   VISITAS: { gid: 1409883976 },
@@ -28,16 +30,19 @@ function doGet(e) {
   }
 }
 
-// --- UTILIDADES OPTIMIZADAS ---
-function _normalizeRut(rut) {
-    if (!rut) return '';
-    return rut.toString().toUpperCase().replace(/[.-]/g, '');
-}
-
-function _hashPassword(password, salt) {
-  const saltedPassword = password + salt;
-  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, saltedPassword);
-  return hash.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
+// --- UTILIDADES ---
+function getSheetByGid(gid) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheets = ss.getSheets();
+    for (let s of sheets) {
+      if (s.getSheetId() == gid) return s;
+    }
+    return null;
+  } catch (e) {
+    console.error(`Error abriendo la hoja de cálculo: ${e.message}`);
+    return null;
+  }
 }
 
 function _convertSheetToObjects(sheet) {
@@ -51,11 +56,24 @@ function _convertSheetToObjects(sheet) {
   });
 }
 
+function _normalizeRut(rut) {
+    if (!rut) return '';
+    return rut.toString().toUpperCase().replace(/[.-]/g, '');
+}
+
+function _hashPassword(password, salt) {
+  const saltedPassword = password + salt;
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, saltedPassword);
+  return hash.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
+}
+
 // --- LÓGICA DE LOGIN Y MANEJO DE CONTRASEÑAS ---
 function loginUser(rut, password) {
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByGid(SHEETS.RESIDENTES.gid);
+    // *** CORRECCIÓN AQUÍ: Se llama a la función global getSheetByGid correctamente. ***
+    const sheet = getSheetByGid(SHEETS.RESIDENTES.gid); 
     const todosResidentes = _convertSheetToObjects(sheet);
+
     if (todosResidentes.length === 0) return { success: false, error: "No se pueden cargar datos de residentes." };
     
     const normalizedRut = _normalizeRut(rut);
@@ -91,7 +109,8 @@ function setNewPassword(tempToken, newPassword) {
         if (!rut) return { success: false, error: 'La sesión para cambiar la contraseña ha expirado.' };
         
         cache.remove(`temp_${tempToken}`);
-        const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByGid(SHEETS.RESIDENTES.gid);
+        // *** CORRECCIÓN AQUÍ: Se llama a la función global getSheetByGid correctamente. ***
+        const sheet = getSheetByGid(SHEETS.RESIDENTES.gid);
         if (!sheet) throw new Error("No se pudo acceder a la hoja de Residentes.");
         
         const data = sheet.getDataRange().getValues();
