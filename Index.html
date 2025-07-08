@@ -1,39 +1,383 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <base target="_top">
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de Residentes</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  </head>
-  <body class="p-4">
-    <div class="container">
-        <h1>Test C: Carga de Datos Completa</h1>
-        <p>Este test simula un login exitoso y llama a <code>testFullDataLoad</code> para cargar toda la información. Revisa la consola del navegador (F12) para ver el objeto de datos completo si tiene éxito.</p>
-        <div id="result" class="alert alert-warning" role="alert">
-          Esperando prueba...
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .form-container { max-width: 400px; margin: 5rem auto; padding: 2rem; background: #fff; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .main-app-container { display: none; }
+        .loader-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+        .profile-pic { width: 100px; height: 100px; object-fit: cover; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .nav-pills .nav-link { border-radius: 0.5rem; color: #6c757d;}
+        .nav-pills .nav-link.active { background-color: #0d6efd; color: white; }
+        .card { border-radius: 0.75rem; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .tab-content .tab-pane { padding: 1rem 0; }
+        .badge-operativo { background-color: #198754 !important; }
+        .badge-falla { background-color: #dc3545 !important; }
+    </style>
+</head>
+<body>
+
+    <!-- VISTA DE LOGIN -->
+    <div id="login-view">
+        <div class="form-container">
+            <h2 class="text-center mb-1">Bienvenido</h2>
+            <p class="text-center text-muted mb-4">Portal de Residentes</p>
+            <form id="login-form">
+                <div class="form-floating mb-3">
+                    <input type="text" class="form-control" id="login-rut" placeholder="12.345.678-9" required>
+                    <label for="login-rut">RUT</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input type="password" class="form-control" id="login-password" placeholder="Contraseña" required>
+                    <label for="login-password">Contraseña</label>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">Ingresar</button>
+                </div>
+            </form>
+            <div id="login-error" class="alert alert-danger mt-3 d-none"></div>
+            <p class="text-center small mt-3 text-muted">En tu primer acceso, tu contraseña son los <strong>primeros 6 dígitos de tu RUT</strong>.</p>
         </div>
     </div>
-    <script>
-      window.onload = function() {
-        const resultDiv = document.getElementById('result');
-        resultDiv.textContent = 'Llamando al backend para cargar todos los datos...';
 
-        google.script.run
-          .withSuccessHandler(function(response) {
-            if (response && response.success) {
-              resultDiv.className = 'alert alert-success';
-              resultDiv.innerHTML = '<strong>¡ÉXITO!</strong> El backend pudo cargar todos los datos sin fallar. El problema está resuelto. Ahora puedes reemplazar este código de prueba por el de la aplicación final.';
-              console.log("Datos recibidos del backend:", response.data);
+    <!-- VISTA DE LA APP PRINCIPAL -->
+    <div id="main-content" class="main-app-container">
+        <header class="bg-primary text-white p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <span></span>
+                <div class="text-center">
+                    <h1 class="h5 mb-0" id="condo-name">Condominio</h1>
+                    <small id="welcome-message">Bienvenido/a</small>
+                </div>
+                <button class="btn btn-danger btn-sm" id="logout-btn" title="Cerrar Sesión"><i class="bi bi-box-arrow-right"></i></button>
+            </div>
+        </header>
+        
+        <div class="container-fluid p-2">
+             <ul class="nav nav-pills nav-fill" id="myTab" role="tablist">
+                <li class="nav-item" role="presentation"><button class="nav-link active" id="home-tab" data-bs-toggle="tab" data-bs-target="#home-tab-pane" type="button" role="tab"><i class="bi bi-speedometer2 d-block fs-4"></i><small>Inicio</small></button></li>
+                <li class="nav-item" role="presentation"><button class="nav-link" id="packages-tab" data-bs-toggle="tab" data-bs-target="#packages-tab-pane" type="button" role="tab"><i class="bi bi-box-seam d-block fs-4"></i><small>Paquetes</small></button></li>
+                <li class="nav-item" role="presentation"><button class="nav-link" id="visits-tab" data-bs-toggle="tab" data-bs-target="#visits-tab-pane" type="button" role="tab"><i class="bi bi-people d-block fs-4"></i><small>Visitas</small></button></li>
+                <li class="nav-item" role="presentation"><button class="nav-link" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile-tab-pane" type="button" role="tab"><i class="bi bi-person-circle d-block fs-4"></i><small>Perfil</small></button></li>
+            </ul>
+        </div>
+        
+        <div class="tab-content" id="myTabContent">
+            <!-- Pestaña Inicio -->
+            <div class="tab-pane fade show active" id="home-tab-pane" role="tabpanel">
+                <div class="container">
+                    <div id="messages-container" class="mb-3"></div>
+                    <div class="card mb-3"><div class="card-header fw-bold"><i class="bi bi-lift me-2"></i>Estado de Ascensores</div><ul class="list-group list-group-flush" id="ascensores-status"></ul></div>
+                    <div class="card mb-3"><div class="card-header fw-bold"><i class="bi bi-p-circle-fill me-2"></i>Estacionamientos de Visita</div><div class="card-body" id="estacionamientos-status"></div></div>
+                    <div class="card"><div class="card-header fw-bold"><i class="bi bi-water me-2"></i>Lavandería</div><div class="card-body" id="lavanderia-status"></div></div>
+                </div>
+            </div>
+
+            <!-- Pestaña Paquetes -->
+            <div class="tab-pane fade" id="packages-tab-pane" role="tabpanel">
+                <div class="container" id="packages-list"></div>
+            </div>
+            
+            <!-- Pestaña Visitas -->
+            <div class="tab-pane fade" id="visits-tab-pane" role="tabpanel">
+                <div class="container" id="visits-history"></div>
+            </div>
+
+            <!-- Pestaña Perfil -->
+            <div class="tab-pane fade" id="profile-tab-pane" role="tabpanel">
+                <div class="container">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <img id="profile-pic" src="" class="profile-pic mb-3">
+                            <h5 id="profile-name"></h5>
+                            <p class="text-muted" id="profile-depto"></p>
+                        </div>
+                        <ul class="list-group list-group-flush">
+                           <li class="list-group-item"><strong>RUT:</strong> <span id="profile-rut"></span></li>
+                           <li class="list-group-item"><strong>Email:</strong> <span id="profile-correo"></span></li>
+                           <li class="list-group-item"><strong>Teléfono:</strong> <span id="profile-fono"></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MODAL PARA CAMBIO DE CONTRASEÑA OBLIGATORIO -->
+    <div class="modal fade" id="changePasswordModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Crea tu nueva contraseña</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Por seguridad, debes establecer una contraseña personalizada para acceder al portal.</p>
+                    <form id="change-password-form">
+                        <div class="form-floating mb-3">
+                            <input type="password" class="form-control" id="new-password" placeholder="Nueva Contraseña" required minlength="6">
+                            <label for="new-password">Nueva Contraseña (mínimo 6 caracteres)</label>
+                        </div>
+                        <div class="form-floating">
+                            <input type="password" class="form-control" id="confirm-password" placeholder="Confirmar Contraseña" required>
+                            <label for="confirm-password">Confirmar Contraseña</label>
+                        </div>
+                        <div id="password-match-error" class="text-danger small mt-2 d-none">Las contraseñas no coinciden.</div>
+                    </form>
+                     <div id="change-password-error" class="alert alert-danger mt-3 d-none"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="save-new-password-btn">Guardar Contraseña</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- LOADER -->
+    <div id="loader" class="loader-container d-none">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let changePasswordModal;
+        const placeholderSvg = "data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' fill='%23cccccc' class='bi bi-person-circle' viewBox='0 0 16 16'%3e%3cpath d='M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'/%3e%3cpath fill-rule='evenodd' d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z'/%3e%3c/svg%3e";
+
+        function formatRut(input) {
+            let value = input.value.replace(/[.-]/g, '').toUpperCase();
+            if (value.length > 1) {
+                let body = value.slice(0, -1);
+                let dv = value.slice(-1);
+                body = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                input.value = body + '-' + dv;
             } else {
-              resultDiv.className = 'alert alert-danger';
-              resultDiv.innerHTML = '<strong>FALLA:</strong> El backend no devolvió datos exitosos. Mensaje: ' + (response ? response.error : 'Respuesta nula.');
+                input.value = value;
             }
-          })
-          .withFailureHandler(function(error) {
-             resultDiv.className = 'alert alert-danger';
-             resultDiv.innerHTML = '<strong>FALLA CATASTRÓFICA:</strong> La comunicación con el servidor falló. ' + error.message;
-          })
-          .testFullDataLoad(); 
-      };
+        }
+        
+        function escapeJsString(str) {
+            if (!str) return "";
+            return str.toString().replace(/\\/g, '\\\\')
+                      .replace(/'/g, "\\'")
+                      .replace(/"/g, '\\"')
+                      .replace(/\n/g, '\\n')
+                      .replace(/\r/g, '\\r');
+        }
+
+        function showView(viewId) {
+            ['login-view', 'main-content'].forEach(id => {
+                document.getElementById(id).style.display = (id === viewId) ? 'block' : 'none';
+            });
+        }
+        function showLoader(show) { document.getElementById('loader').classList.toggle('d-none', !show); }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
+            document.getElementById('login-rut').addEventListener('input', function() { formatRut(this); });
+
+            const token = localStorage.getItem('sessionToken');
+            if (token) {
+                showLoader(true);
+                google.script.run
+                    .withSuccessHandler(handleLoginSuccess)
+                    .withFailureHandler(handleLoginFailure)
+                    .getResidentDataWithToken(token);
+            } else {
+                showView('login-view');
+            }
+        });
+
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const rut = document.getElementById('login-rut').value;
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+            errorDiv.classList.add('d-none');
+            showLoader(true);
+
+            google.script.run
+                .withSuccessHandler(response => {
+                    showLoader(false);
+                    if (response && response.success) {
+                        if (response.action === 'login') {
+                            localStorage.setItem('sessionToken', response.token);
+                            showLoader(true);
+                            google.script.run
+                                .withSuccessHandler(handleLoginSuccess)
+                                .withFailureHandler(handleLoginFailure)
+                                .getResidentDataWithToken(response.token);
+                        } else if (response.action === 'force_change') {
+                            localStorage.setItem('tempToken', response.tempToken);
+                            changePasswordModal.show();
+                        }
+                    } else {
+                        errorDiv.textContent = (response && response.error) || 'Error desconocido. Inténtalo de nuevo.';
+                        errorDiv.classList.remove('d-none');
+                    }
+                })
+                .withFailureHandler(err => {
+                    errorDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
+                    errorDiv.classList.remove('d-none');
+                    showLoader(false);
+                })
+                .loginUser(rut, password);
+        });
+        
+        function handleLoginFailure(error) {
+            localStorage.removeItem('sessionToken');
+            showView('login-view');
+            showLoader(false);
+            console.error("Login Failure Handler:", error);
+            alert("Ocurrió un error de conexión o del servidor. Por favor, intenta de nuevo.");
+        }
+
+        document.getElementById('save-new-password-btn').addEventListener('click', function() {
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const errorMatchDiv = document.getElementById('password-match-error');
+            const errorChangeDiv = document.getElementById('change-password-error');
+            errorMatchDiv.classList.add('d-none');
+            errorChangeDiv.classList.add('d-none');
+
+            if (!newPassword || newPassword.length < 6) {
+                errorChangeDiv.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+                errorChangeDiv.classList.remove('d-none');
+                return;
+            }
+            if (newPassword !== confirmPassword) {
+                errorMatchDiv.classList.remove('d-none');
+                return;
+            }
+            
+            const tempToken = localStorage.getItem('tempToken');
+            if (!tempToken) {
+                alert('Sesión expirada. Por favor, vuelve a iniciar sesión.');
+                location.reload();
+                return;
+            }
+
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+            
+            google.script.run
+                .withSuccessHandler(res => {
+                    if (res && res.success) {
+                        alert(res.message);
+                        localStorage.removeItem('tempToken');
+                        changePasswordModal.hide();
+                        document.getElementById('login-form').reset();
+                    } else {
+                        errorChangeDiv.textContent = (res && res.error) || 'Error al guardar.';
+                        errorChangeDiv.classList.remove('d-none');
+                    }
+                    this.disabled = false;
+                    this.innerHTML = 'Guardar Contraseña';
+                })
+                .withFailureHandler(err => {
+                    errorChangeDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
+                    errorChangeDiv.classList.remove('d-none');
+                    this.disabled = false;
+                    this.innerHTML = 'Guardar Contraseña';
+                })
+                .setNewPassword(tempToken, newPassword);
+        });
+
+        function handleLoginSuccess(response) {
+            if (!response || !response.success) {
+                localStorage.removeItem('sessionToken');
+                showView('login-view');
+                showLoader(false);
+                alert((response && response.error) || "Tu sesión ha expirado o no se pudieron cargar los datos.");
+                return;
+            }
+            
+            renderData(response.data); 
+            showLoader(false);
+            showView('main-content');
+        }
+        
+        function renderData(data) {
+            const { perfil, servicios, encomiendas, visitas, mensajes, config } = data;
+            
+            document.getElementById('condo-name').textContent = config.NombreCondominio || "Condominio";
+            document.getElementById('welcome-message').textContent = `¡Hola, ${perfil.Nombre}!`;
+            renderMessages(mensajes);
+            renderServices(servicios, config);
+            renderPackages(encomiendas);
+            renderVisits(visitas);
+            renderProfile(perfil);
+        }
+
+        function renderMessages(mensajes) {
+            const container = document.getElementById('messages-container');
+            if (!mensajes || mensajes.length === 0) {
+                container.innerHTML = ''; return;
+            }
+            let html = '<div class="card mb-3"><div class="card-header fw-bold bg-warning-subtle"><i class="bi bi-megaphone-fill me-2"></i>Anuncios</div><div class="list-group list-group-flush">';
+            mensajes.slice(0, 3).forEach(m => {
+                const escapedTitle = escapeJsString(m.Titulo);
+                const escapedMessage = escapeJsString(m.Mensaje);
+                html += `<a href="#" class="list-group-item list-group-item-action" onclick="alert('${escapedTitle}\\n\\n${escapedMessage}')">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${m.Titulo}</h6><small class="text-muted">${m.Fecha}</small>
+                            </div>
+                            <p class="mb-1 small text-truncate">${m.Mensaje}</p>
+                         </a>`;
+            });
+            container.innerHTML = html + '</div></div>';
+        }
+
+        function renderServices(servicios, config) {
+            const ascContainer = document.getElementById('ascensores-status');
+            ascContainer.innerHTML = servicios.ascensores.map(a => `<li class="list-group-item d-flex justify-content-between align-items-center">Ascensor ${a.Número} (${a.Ubicación}) <span class="badge ${a.Estado.toLowerCase() === 'operativo' ? 'badge-operativo' : 'badge-falla'}">${a.Estado}</span></li>`).join('') || '<li class="list-group-item text-muted">No hay datos.</li>';
+            
+            const estContainer = document.getElementById('estacionamientos-status');
+            const estDisponibles = servicios.estacionamientos.total - servicios.estacionamientos.ocupados;
+            estContainer.innerHTML = `<p class="card-text">Hay <strong>${estDisponibles}</strong> de <strong>${servicios.estacionamientos.total}</strong> estacionamientos disponibles.</p>`;
+
+            const lavContainer = document.getElementById('lavanderia-status');
+            const lavDisponibles = (config['Lavadoras_Disponibles'] || 1) - servicios.lavadorasEnUso;
+            const secDisponibles = (config['Secadoras_Disponibles'] || 1) - servicios.secadorasEnUso;
+            lavContainer.innerHTML = `<p class="mb-1">Lavadoras disponibles: <strong>${lavDisponibles}</strong></p><p class="mb-0">Secadoras disponibles: <strong>${secDisponibles}</strong></p>`;
+        }
+
+        function renderPackages(packages) {
+            const container = document.getElementById('packages-list');
+            if (!packages || packages.length === 0) {
+                container.innerHTML = '<div class="alert alert-success text-center"><i class="bi bi-check-circle-fill me-2"></i>No tienes encomiendas pendientes.</div>'; return;
+            }
+            container.innerHTML = '<ul class="list-group">' + packages.map(p => `<li class="list-group-item"><p class="fw-bold mb-1">${p.Descripción}</p><small class="text-muted">Recibido el ${p['Fecha Recepción']} a las ${p['Hora Recepción']}</small></li>`).join('') + '</ul>';
+        }
+
+        function renderVisits(visits) {
+            const container = document.getElementById('visits-history');
+            if (!visits || visits.length === 0) {
+                container.innerHTML = '<div class="alert alert-info text-center"><i class="bi bi-info-circle-fill me-2"></i>No tienes historial de visitas recientes.</div>'; return;
+            }
+            container.innerHTML = '<div class="list-group">' + visits.map(v => `<div class="list-group-item"><div class="d-flex w-100 justify-content-between"><h6 class="mb-1">${v['Nombre Visita']}</h6><small>${v.Fecha}</small></div><p class="mb-1">Ingreso: ${v['Hora Ingreso']} - Salida: ${v['Hora Salida'] || 'Activa'}</p><small class="text-muted">RUT: ${v['Rut Visitante']}</small></div>`).join('') + '</div>';
+        }
+
+        function renderProfile(perfil) {
+            const profilePic = document.getElementById('profile-pic');
+            profilePic.src = perfil.Foto || placeholderSvg;
+            profilePic.onerror = function() { this.src = placeholderSvg; };
+            document.getElementById('profile-name').textContent = `${perfil.Nombre} ${perfil.Apellidos}`;
+            document.getElementById('profile-depto').textContent = `Torre ${perfil.Torre} - Depto ${perfil.Departamento}`;
+            document.getElementById('profile-rut').textContent = perfil.Rut;
+            document.getElementById('profile-correo').textContent = perfil.Correo || "No registrado";
+            document.getElementById('profile-fono').textContent = perfil.Fono || "No registrado";
+        }
+
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            localStorage.removeItem('sessionToken');
+            localStorage.removeItem('tempToken');
+            showView('login-view');
+            document.getElementById('login-form').reset();
+        });
     </script>
-  </body>
+</body>
 </html>
