@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body class="p-4">
+    <div class="container">
+        <h1>Test C: Carga de Datos Completa</h1>
+        <p>Este test simula un login exitoso y llama a <code>testFullDataLoad</code> para cargar toda la información. Revisa la consola del navegador (F12) para ver el objeto de datos completo si tiene éxito.</p>
+        <div id="result" class="alert alert-warning" role="alert">
+          Esperando prueba...
+        </div>
+    </div>
+    <script>
+      window.onload = function() {
+        const resultDiv = document.getElementById('result');
+        resultDiv.textContent = 'Llamando al backend para cargar todos los datos...';
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (response && response.success) {
+              resultDiv.className = 'alert alert-success';
+              resultDiv.innerHTML = '<strong>¡ÉXITO!</strong> El backend pudo cargar todos los datos sin fallar. El problema está resuelto. Ahora puedes reemplazar este código de prueba por el de la aplicación final.';
+              console.log("Datos recibidos del backend:", response.data);
+            } else {
+              resultDiv.className = 'alert alert-danger';
+              resultDiv.innerHTML = '<strong>FALLA:</strong> El backend no devolvió datos exitosos. Mensaje: ' + (response ? response.error : 'Respuesta nula.');
+            }
+          })
+          .withFailureHandler(function(error) {
+             resultDiv.className = 'alert alert-danger';
+             resultDiv.innerHTML = '<strong>FALLA CATASTRÓFICA:</strong> La comunicación con el servidor falló. ' + error.message;
+          })
+          .testFullDataLoad(); 
+      };
+    </script>
+  </body>
+</html>
