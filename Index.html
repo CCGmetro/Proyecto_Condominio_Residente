@@ -16,6 +16,7 @@
         .nav-pills .nav-link.active { background-color: #0d6efd; color: white; }
         .card { border-radius: 0.75rem; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .tab-content .tab-pane { padding: 1rem 0; }
+        .tab-pane .spinner-border { margin-top: 3rem; }
         .badge-operativo { background-color: #198754 !important; }
         .badge-falla { background-color: #dc3545 !important; }
     </style>
@@ -79,13 +80,17 @@
             </div>
 
             <!-- Pestaña Paquetes -->
-            <div class="tab-pane fade" id="packages-tab-pane" role="tabpanel">
-                <div class="container" id="packages-list"></div>
+            <div class="tab-pane fade text-center" id="packages-tab-pane" role="tabpanel" data-loaded="false">
+                <div class="container" id="packages-list">
+                    <!-- El spinner se pondrá aquí con JS -->
+                </div>
             </div>
             
             <!-- Pestaña Visitas -->
-            <div class="tab-pane fade" id="visits-tab-pane" role="tabpanel">
-                <div class="container" id="visits-history"></div>
+            <div class="tab-pane fade text-center" id="visits-tab-pane" role="tabpanel" data-loaded="false">
+                <div class="container" id="visits-history">
+                    <!-- El spinner se pondrá aquí con JS -->
+                </div>
             </div>
 
             <!-- Pestaña Perfil -->
@@ -178,6 +183,52 @@
         document.addEventListener("DOMContentLoaded", function() {
             changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
             document.getElementById('login-rut').addEventListener('input', function() { formatRut(this); });
+
+            const packagesTab = document.getElementById('packages-tab');
+            packagesTab.addEventListener('click', function() {
+                const targetPane = document.getElementById('packages-tab-pane');
+                if (targetPane.getAttribute('data-loaded') === 'false') {
+                    const packagesList = document.getElementById('packages-list');
+                    packagesList.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
+                    
+                    google.script.run
+                        .withSuccessHandler(response => {
+                            if (response && response.success) {
+                                renderPackages(response.data);
+                                targetPane.setAttribute('data-loaded', 'true');
+                            } else {
+                                packagesList.innerHTML = `<div class="alert alert-danger">${(response && response.error) || 'Error al cargar'}</div>`;
+                            }
+                        })
+                        .withFailureHandler(err => {
+                             packagesList.innerHTML = `<div class="alert alert-danger">Error de conexión.</div>`;
+                        })
+                        .getMisEncomiendas_lazy(localStorage.getItem('sessionToken'));
+                }
+            });
+
+            const visitsTab = document.getElementById('visits-tab');
+            visitsTab.addEventListener('click', function() {
+                const targetPane = document.getElementById('visits-tab-pane');
+                if (targetPane.getAttribute('data-loaded') === 'false') {
+                    const visitsHistory = document.getElementById('visits-history');
+                    visitsHistory.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
+                    
+                     google.script.run
+                        .withSuccessHandler(response => {
+                            if (response && response.success) {
+                                renderVisits(response.data);
+                                targetPane.setAttribute('data-loaded', 'true');
+                            } else {
+                                visitsHistory.innerHTML = `<div class="alert alert-danger">${(response && response.error) || 'Error al cargar'}</div>`;
+                            }
+                        })
+                        .withFailureHandler(err => {
+                             visitsHistory.innerHTML = `<div class="alert alert-danger">Error de conexión.</div>`;
+                        })
+                        .getMiHistorialVisitas_lazy(localStorage.getItem('sessionToken'));
+                }
+            });
 
             const token = localStorage.getItem('sessionToken');
             if (token) {
@@ -295,20 +346,18 @@
                 return;
             }
             
-            renderData(response.data); 
+            renderInitialData(response.data); 
             showLoader(false);
             showView('main-content');
         }
         
-        function renderData(data) {
-            const { perfil, servicios, encomiendas, visitas, mensajes, config } = data;
+        function renderInitialData(data) {
+            const { perfil, servicios, mensajes, config } = data;
             
             document.getElementById('condo-name').textContent = config.NombreCondominio || "Condominio";
             document.getElementById('welcome-message').textContent = `¡Hola, ${perfil.Nombre}!`;
             renderMessages(mensajes);
             renderServices(servicios, config);
-            renderPackages(encomiendas);
-            renderVisits(visitas);
             renderProfile(perfil);
         }
 

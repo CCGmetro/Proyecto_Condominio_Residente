@@ -1,48 +1,32 @@
 // ==========================================================
-//    PORTAL DE RESIDENTES - BACKEND (v11 - Corrección Final de TypeError)
+//    PORTAL DE RESIDENTES - BACKEND (v12 - Con Lazy Loading - Completo)
 // ==========================================================
 
-// IDs PRINCIPALES
 const SPREADSHEET_ID = '1sGh-wSzD9kw2xLwc-WA5saL46oZtpsHYH6QP57dZuMw';
-
-// GIDs DE LAS HOJAS
 const SHEETS = {
-  RESIDENTES: { gid: 0 },
-  VISITAS: { gid: 1409883976 },
-  DEPARTAMENTOS: { gid: 1067842708 },
-  CONFIGURACION: { gid: 34039155 },
-  ESTACIONAMIENTOS: { gid: 227107705 },
-  ENCOMIENDAS: { gid: 1197993248 },
-  LAVANDERIA: { gid: 260781604 },
-  ASCENSORES: { gid: 605301846 },
-  MENSAJES: { gid: 837880582 } 
+  RESIDENTES: { gid: 0 }, VISITAS: { gid: 1409883976 }, DEPARTAMENTOS: { gid: 1067842708 }, CONFIGURACION: { gid: 34039155 },
+  ESTACIONAMIENTOS: { gid: 227107705 }, ENCOMIENDAS: { gid: 1197993248 }, LAVANDERIA: { gid: 260781604 },
+  ASCENSORES: { gid: 605301846 }, MENSAJES: { gid: 837880582 } 
 };
 
-// --- SERVIDOR WEB ---
 function doGet(e) {
   try {
-    return HtmlService.createTemplateFromFile('Index').evaluate()
-      .setTitle('Portal de Residentes')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+    return HtmlService.createTemplateFromFile('Index').evaluate().setTitle('Portal de Residentes').addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
   } catch (err) {
-    console.error("Error crítico en doGet:", err);
-    return HtmlService.createHtmlOutput(`<html><body><h1>Error del Servidor</h1><p>No se pudo cargar la aplicación.</p></body></html>`).setTitle("Error");
+    return HtmlService.createHtmlOutput('Error cargando la aplicación.').setTitle("Error");
   }
 }
 
 // --- UTILIDADES ---
-function getSheetByGid(gid) {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheets = ss.getSheets();
-    for (let s of sheets) {
-      if (s.getSheetId() == gid) return s;
-    }
-    return null;
-  } catch (e) {
-    console.error(`Error abriendo la hoja de cálculo: ${e.message}`);
-    return null;
-  }
+function _normalizeRut(rut) {
+    if (!rut) return '';
+    return rut.toString().toUpperCase().replace(/[.-]/g, '');
+}
+
+function _hashPassword(password, salt) {
+  const saltedPassword = password + salt;
+  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, saltedPassword);
+  return hash.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
 }
 
 function _convertSheetToObjects(sheet) {
@@ -56,22 +40,11 @@ function _convertSheetToObjects(sheet) {
   });
 }
 
-function _normalizeRut(rut) {
-    if (!rut) return '';
-    return rut.toString().toUpperCase().replace(/[.-]/g, '');
-}
-
-function _hashPassword(password, salt) {
-  const saltedPassword = password + salt;
-  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, saltedPassword);
-  return hash.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
-}
-
 // --- LÓGICA DE LOGIN Y MANEJO DE CONTRASEÑAS ---
 function loginUser(rut, password) {
   try {
-    // *** CORRECCIÓN AQUÍ: Se llama a la función global getSheetByGid correctamente. ***
-    const sheet = getSheetByGid(SHEETS.RESIDENTES.gid); 
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByGid(SHEETS.RESIDENTES.gid);
     const todosResidentes = _convertSheetToObjects(sheet);
 
     if (todosResidentes.length === 0) return { success: false, error: "No se pueden cargar datos de residentes." };
@@ -109,8 +82,8 @@ function setNewPassword(tempToken, newPassword) {
         if (!rut) return { success: false, error: 'La sesión para cambiar la contraseña ha expirado.' };
         
         cache.remove(`temp_${tempToken}`);
-        // *** CORRECCIÓN AQUÍ: Se llama a la función global getSheetByGid correctamente. ***
-        const sheet = getSheetByGid(SHEETS.RESIDENTES.gid);
+        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+        const sheet = ss.getSheetByGid(SHEETS.RESIDENTES.gid);
         if (!sheet) throw new Error("No se pudo acceder a la hoja de Residentes.");
         
         const data = sheet.getDataRange().getValues();
@@ -138,7 +111,8 @@ function setNewPassword(tempToken, newPassword) {
     }
 }
 
-// --- OBTENER DATOS DEL RESIDENTE (VERSIÓN OPTIMIZADA) ---
+
+// --- FUNCIÓN DE CARGA INICIAL (AHORA MÁS LIGERA) ---
 function getResidentDataWithToken(token) {
     try {
         if (!token) return { success: false, error: 'Sesión inválida.' };
@@ -152,10 +126,9 @@ function getResidentDataWithToken(token) {
         const allSheets = ss.getSheets();
         const findSheet = (gid) => allSheets.find(s => s.getSheetId() == gid);
 
-        const todosResidentes = _convertSheetToObjects(findSheet(SHEETS.RESIDENTES.gid));
-        const residenteActual = todosResidentes.find(r => r.Rut === rut);
-        if (!residenteActual) return { success: false, error: 'No se pudo encontrar tu perfil.' };
-        
+        const residenteActual = _getResidenteByRut(ss, rut);
+
+        // --- Carga de datos ESENCIALES ---
         const configData = _convertSheetToObjects(findSheet(SHEETS.CONFIGURACION.gid));
         const config = {};
         configData.forEach(row => { if (row.Clave) config[row.Clave] = row.Valor; });
@@ -167,84 +140,75 @@ function getResidentDataWithToken(token) {
             ascensores: _convertSheetToObjects(findSheet(SHEETS.ASCENSORES.gid)),
             lavadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Lavadora').length,
             secadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Secadora').length,
-            estacionamientos: { total: estacionamientos.length, ocupados: estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length }
+            estacionamientos: { 
+                total: estacionamientos.length, 
+                ocupados: estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length 
+            }
         };
 
-        const encomiendas = _convertSheetToObjects(findSheet(SHEETS.ENCOMIENDAS.gid)).filter(e => e.Torre == residenteActual.Torre && e.Departamento == residenteActual.Departamento && String(e.Estado).toUpperCase() === 'PENDIENTE');
-        const visitas = _convertSheetToObjects(findSheet(SHEETS.VISITAS.gid)).filter(v => v.Torre == residenteActual.Torre && v.Departamento == residenteActual.Departamento).sort((a, b) => b.ID - a.ID).slice(0, 20);
         const mensajes = _convertSheetToObjects(findSheet(SHEETS.MENSAJES.gid)).filter(m => {
             if (!m.Destinatario) return false;
             const dest = m.Destinatario.toUpperCase();
             return dest === 'TODOS' || dest === `T${residenteActual.Torre}` || dest === `T${residenteActual.Torre}-${residenteActual.Departamento}` || dest === _normalizeRut(residenteActual.Rut);
         }).sort((a, b) => b.ID - a.ID);
-        
-        return { success: true, data: { perfil: residenteActual, servicios, encomiendas, visitas, mensajes, config }};
+        // --- FIN de carga de datos esenciales ---
+
+        // Devolvemos solo lo necesario para la primera vista.
+        return { success: true, data: { perfil: residenteActual, servicios, mensajes, config }};
     } catch (e) {
         console.error("Error en getResidentDataWithToken:", e);
         return { success: false, error: `Error cargando datos: ${e.message}` };
     }
 }
 
-function verificarEntorno() {
-  const REQUIRED_HEADERS = {
-    RESIDENTES: ["Rut", "Nombre", "Apellidos", "Torre", "Departamento", "PasswordHash", "PasswordSalt"],
-    CONFIGURACION: ["Clave", "Valor"],
-    MENSAJES: ["ID", "Titulo", "Mensaje", "Destinatario"],
-    ENCOMIENDAS: ["Torre", "Departamento", "Estado"],
-    VISITAS: ["Torre", "Departamento", "ID"]
-  };
-  
-  Logger.log("--- INICIANDO CHEQUEO DE SISTEMA ---");
-  
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    Logger.log(`✅ Conexión exitosa con la Hoja de Cálculo: '${ss.getName()}'`);
-    
-    const allGids = Object.keys(SHEETS).map(key => SHEETS[key].gid);
-    const allSheets = ss.getSheets();
-    let allChecksPass = true;
-    
-    for (const sheetName in SHEETS) {
-      const gid = SHEETS[sheetName].gid;
-      const sheet = allSheets.find(s => s.getSheetId() == gid);
-      
-      if (!sheet) {
-        Logger.log(`❌ ERROR CRÍTICO: No se encontró ninguna hoja con el GID ${gid} para '${sheetName}'.`);
-        allChecksPass = false;
-        continue;
-      }
-      
-      Logger.log(`- Verificando hoja '${sheet.getName()}' (para ${sheetName})... OK.`);
-      
-      if (REQUIRED_HEADERS[sheetName]) {
-        if (sheet.getLastRow() < 1) {
-            Logger.log(`  ❌ ERROR: La hoja '${sheet.getName()}' está completamente vacía y no tiene encabezados.`);
-            allChecksPass = false;
-            continue;
-        }
-        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h ? h.trim() : '');
-        
-        REQUIRED_HEADERS[sheetName].forEach(requiredHeader => {
-          if (!headers.includes(requiredHeader)) {
-            Logger.log(`  ❌ ERROR: En la hoja '${sheet.getName()}', falta la columna requerida: '${requiredHeader}'.`);
-            allChecksPass = false;
-          }
-        });
-      }
-    }
-    
-    Logger.log("--- CHEQUEO DE SISTEMA FINALIZADO ---");
-    if (allChecksPass) {
-      Logger.log("✅ ¡FELICIDADES! Todo tu entorno parece estar configurado correctamente. El problema podría ser otro.");
-      SpreadsheetApp.getUi().alert("Chequeo de Sistema", "¡FELICIDADES! Todas las hojas y columnas requeridas fueron encontradas.", SpreadsheetApp.getUi().ButtonSet.OK);
-    } else {
-      Logger.log("❗️ ATENCIÓN: Se encontraron uno o más errores. Revisa el registro de arriba para ver los detalles y corregirlos en tu Google Sheet.");
-      SpreadsheetApp.getUi().alert("Chequeo de Sistema", "¡ATENCIÓN! Se encontraron errores. Revisa los registros (Ver > Registros) para ver los detalles.", SpreadsheetApp.getUi().ButtonSet.OK);
-    }
+// --- NUEVAS FUNCIONES PARA CARGA DIFERIDA (LAZY LOADING) ---
+function getMisEncomiendas_lazy(token) {
+    try {
+        const rut = _getRutFromToken(token);
+        if (!rut) return { success: false, error: "Sesión inválida." };
 
-  } catch (e) {
-    Logger.log("--- ERROR CATASTRÓFICO DURANTE EL CHEQUEO ---");
-    Logger.log(e.message);
-    SpreadsheetApp.getUi().alert("Error Catastrófico", "No se pudo completar el chequeo. Posiblemente el SPREADSHEET_ID es incorrecto o no tienes permisos. Error: " + e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
+        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+        const residente = _getResidenteByRut(ss, rut);
+        
+        const encomiendasSheet = ss.getSheetByGid(SHEETS.ENCOMIENDAS.gid);
+        const todasEncomiendas = _convertSheetToObjects(encomiendasSheet);
+        const encomiendasFiltradas = todasEncomiendas.filter(e => e.Torre == residente.Torre && e.Departamento == residente.Departamento && String(e.Estado).toUpperCase() === 'PENDIENTE');
+        
+        return { success: true, data: encomiendasFiltradas };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
+
+function getMiHistorialVisitas_lazy(token) {
+    try {
+        const rut = _getRutFromToken(token);
+        if (!rut) return { success: false, error: "Sesión inválida." };
+
+        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+        const residente = _getResidenteByRut(ss, rut);
+
+        const visitasSheet = ss.getSheetByGid(SHEETS.VISITAS.gid);
+        const todasVisitas = _convertSheetToObjects(visitasSheet);
+        const visitasFiltradas = todasVisitas.filter(v => v.Torre == residente.Torre && v.Departamento == residente.Departamento).sort((a, b) => b.ID - a.ID).slice(0, 20);
+        
+        return { success: true, data: visitasFiltradas };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+}
+
+// --- FUNCIONES AUXILIARES REUTILIZABLES ---
+function _getRutFromToken(token) {
+    if (!token) return null;
+    const cache = CacheService.getScriptCache();
+    return cache.get(token);
+}
+
+function _getResidenteByRut(spreadsheet, rut) {
+    const residentesSheet = spreadsheet.getSheetByGid(SHEETS.RESIDENTES.gid);
+    const todosResidentes = _convertSheetToObjects(residentesSheet);
+    const residente = todosResidentes.find(r => r.Rut === rut);
+    if (!residente) throw new Error("Perfil no encontrado.");
+    return residente;
 }
