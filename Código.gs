@@ -28,29 +28,96 @@ const TEMP_CACHE_EXPIRATION = 300;
 // --- SERVIDOR WEB ---
 function doGet(e) {
   try {
-    // Registrar acceso
-    logActivity('Acceso a la aplicación', {ip: e.queryString});
-    
-    const template = HtmlService.createTemplateFromFile('Index');
-    template.cacheTime = 0; // Desactiva cache para desarrollo
-    return template.evaluate()
+    return HtmlService.createTemplateFromFile('Index').evaluate()
       .setTitle('Portal de Residentes')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (err) {
-    console.error("Error en doGet:", err);
-    logError('Error en doGet', err);
-    return HtmlService.createHtmlOutput(`
-      <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-          <h1 style="color: #dc3545;">Error del Servidor</h1>
-          <p>No se pudo cargar la aplicación. Por favor, inténtalo más tarde.</p>
-          <p><small>${err.message}</small></p>
-        </body>
-      </html>
-    `).setTitle("Error");
+    console.error("Error crítico en doGet:", err);
+    return HtmlService.createHtmlOutput(`<html><body><h1>Error del Servidor</h1><p>No se pudo cargar la aplicación.</p></body></html>`).setTitle("Error");
   }
 }
+
+// --- OBTENER DATOS DE LA APLICACIÓN ---
+function getInitialData(token) {
+    try {
+        if (!token) return { success: false, error: 'Sesión inválida.' };
+        const cache = CacheService.getScriptCache();
+        const rut = cache.get(token);
+        if (!rut) return { success: false, error: 'Tu sesión ha expirado.' };
+        
+        cache.put(token, rut, CACHE_EXPIRATION);
+
+        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+        const allSheets = ss.getSheets();
+        const findSheet = (gid) => allSheets.find(s => s.getSheetId() == gid);
+        
+        const residenteActual = _convertSheetToObjects(findSheet(SHEETS.RESIDENTES.gid)).find(r => r.Rut === rut);
+        if (!residenteActual) return { success: false, error: 'No se pudo encontrar tu perfil.' };
+
+        // *** CORRECCIÓN CLAVE ***
+        residenteActual.Foto = getResidentPhotoUrl(residenteActual.Rut);
+
+        const configData = _convertSheetToObjects(findSheet(SHEETS.CONFIGURACION.gid));
+        const config = {};
+        configData.forEach(row => { if (row.Clave) config[row.Clave] = row.Valor; });
+        
+        // *** CORRECCIÓN CLAVE ***
+        config.LogoUrl = getLogoUrl();
+
+        const usosLavanderia = _convertSheetToObjects(findSheet(SHEETS.LAVANDERIA.gid)).filter(u => !u["Hora Termino"]);
+        const estacionamientos = _convertSheetToObjects(findSheet(SHEETS.ESTACIONAMIENTOS.gid));
+        
+        const servicios = {
+            ascensores: _convertSheetToObjects(findSheet(SHEETS.ASCENSORES.gid)),
+            lavadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Lavadora').length,
+            secadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Secadora').length,
+            estacionamientos: { total: estacionamientos.length, ocupados: estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length }
+        };
+
+        const mensajes = _convertSheetToObjects(findSheet(SHEETS.MENSAJES.gid)).filter(m => {
+            if (!m.Destinatario) return false;
+            const dest = m.Destinatario.toUpperCase();
+            return dest === 'TODOS' || dest === `T${residenteActual.Torre}` || dest === `T${residenteActual.Torre}-${residenteActual.Departamento}` || dest === _normalizeRut(residenteActual.Rut);
+        }).sort((a, b) => b.ID - a.ID);
+
+        return { success: true, data: { perfil: residenteActual, servicios, mensajes, config }};
+    } catch (e) {
+        console.error("Error en getInitialData:", e);
+        return { success: false, error: `Error cargando datos: ${e.message}` };
+    }
+}
+
+// --- FUNCIONES LAZY LOADING (OPTIMIZADAS) ---
+function getLazyData(token, dataType) {
+    try {
+        if (!token) return { success: false, error: "Sesión inválida." };
+        const cache = CacheService.getScriptCache();
+        const rut = cache.get(token);
+        if (!rut) return { success: false, error: "Tu sesión ha expirado." };
+
+        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+        const residente = _convertSheetToObjects(ss.getSheetByGid(SHEETS.RESIDENTES.gid)).find(r => r.Rut === rut);
+        if (!residente) throw new Error("Perfil no encontrado.");
+
+        let data;
+        if (dataType === 'encomiendas') {
+            const sheet = ss.getSheetByGid(SHEETS.ENCOMIENDAS.gid);
+            data = _convertSheetToObjects(sheet).filter(e => e.Torre == residente.Torre && e.Departamento == residente.Departamento && String(e.Estado).toUpperCase() === 'PENDIENTE');
+        } else if (dataType === 'visitas') {
+            const sheet = ss.getSheetByGid(SHEETS.VISITAS.gid);
+            data = _convertSheetToObjects(sheet).filter(v => v.Torre == residente.Torre && v.Departamento == residente.Departamento).sort((a, b) => b.ID - a.ID).slice(0, 20);
+        } else {
+            return { success: false, error: "Tipo de dato no válido." };
+        }
+        
+        return { success: true, data: data };
+    } catch (e) {
+        console.error(`Error en getLazyData (${dataType}):`, e);
+        return { success: false, error: e.message };
+    }
+}
+
 
 // --- LOGGING Y AUDITORÍA ---
 function logActivity(action, details = {}) {
@@ -103,7 +170,6 @@ function logError(context, error) {
 // --- UTILIDADES MEJORADAS ---
 function _normalizeRut(rut) {
     if (!rut) return '';
-    // Elimina puntos, guiones y espacios, y convierte a mayúsculas
     return rut.toString().replace(/[.\-\s]/g, '').toUpperCase();
 }
 
@@ -153,99 +219,47 @@ function _generateTempPassword() {
  */
 function _convertSheetToObjects(sheet) {
   if (!sheet || sheet.getLastRow() < 2) return [];
-  
-  const cacheKey = `sheet_${sheet.getSheetId()}_${sheet.getLastRow()}_${sheet.getLastColumn()}`;
-  const cache = CacheService.getScriptCache();
-  const cachedData = cache.get(cacheKey);
-  
-  if (cachedData) {
-    return JSON.parse(cachedData);
-  }
-  
   const data = sheet.getDataRange().getDisplayValues();
   const headers = data.shift().map(h => h ? h.toString().trim() : '');
-  
-  const result = data.map((row, index) => {
-    const obj = { _rowIndex: index + 2 };
-    headers.forEach((header, i) => { 
-      if (header) obj[header] = row[i] !== undefined ? row[i] : null;
-    });
+  return data.map((row) => {
+    const obj = {};
+    headers.forEach((header, i) => { if (header) obj[header] = row[i]; });
     return obj;
   });
-  
-  cache.put(cacheKey, JSON.stringify(result), CACHE_EXPIRATION);
-  return result;
 }
 
 // --- MANEJO DE ARCHIVOS ---
+// --- FUNCIONES PARA OBTENER URL DE IMÁGENES ---
 function getLogoUrl() {
   try {
     const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
     const files = folder.getFilesByName('LogoCDA.jpg');
-    
     if (files.hasNext()) {
-      const file = files.next();
-      logActivity('Logo cargado', {fileId: file.getId()});
-      return file.getUrl();
+      // *** CORRECCIÓN CLAVE ***
+      return "https://drive.google.com/uc?export=view&id=" + files.next().getId();
     }
-    
     return null;
   } catch (e) {
     console.error("Error al obtener logo:", e);
-    logError('Error al obtener logo', e);
     return null;
   }
 }
 
 function getResidentPhotoUrl(rut) {
-  if (!rut) {
-    console.error("Error: RUT no proporcionado");
-    return null;
-  }
-
+  if (!rut) return null;
   try {
-    // Elimina espacios en blanco que podrían causar problemas
-    const cleanRut = rut.toString().trim();
-    console.log(`Buscando foto para RUT exacto: ${cleanRut}`);
-    
     const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
     
-    // 1. Primera búsqueda: Nombre exacto "12.345.678-9.jpg"
-    const exactFileName = cleanRut + ".jpg";
-    const exactFile = folder.getFilesByName(exactFileName);
-    
-    if (exactFile.hasNext()) {
-      const file = exactFile.next();
-      console.log(`Encontrado por nombre exacto: ${exactFileName}`);
-      return "https://drive.google.com/uc?export=view&id=" + file.getId();
-    }
-    
-    // 2. Segunda búsqueda: "12.345.678-9" (sin extensión)
-    const exactFileWithoutExt = folder.getFilesByName(cleanRut);
-    if (exactFileWithoutExt.hasNext()) {
-      const file = exactFileWithoutExt.next();
-      console.log(`Encontrado por nombre sin extensión: ${cleanRut}`);
-      return "https://drive.google.com/uc?export=view&id=" + file.getId();
-    }
-    
-    // 3. Búsqueda flexible si las anteriores fallan
-    console.log("No se encontró coincidencia exacta, realizando búsqueda flexible...");
+    // Búsqueda flexible. Google Drive a veces no encuentra por nombre exacto con caracteres especiales.
     const files = folder.getFiles();
-    let fileCount = 0;
-    
     while (files.hasNext()) {
-      fileCount++;
       const file = files.next();
-      const fileName = file.getName();
-      
-      // Compara eliminando espacios y cambiando a minúsculas
-      if (fileName.trim().toLowerCase() === exactFileName.toLowerCase()) {
-        console.log(`Coincidencia flexible encontrada: ${fileName}`);
+      // Comparamos el nombre del archivo sin extensión con el rut.
+      if (file.getName().split('.')[0] === rut) {
+        // *** CORRECCIÓN CLAVE ***
         return "https://drive.google.com/uc?export=view&id=" + file.getId();
       }
     }
-    
-    console.log(`No se encontró foto. Archivos revisados: ${fileCount}`);
     return null;
   } catch (e) {
     console.error("Error en getResidentPhotoUrl:", e);
@@ -256,122 +270,56 @@ function getResidentPhotoUrl(rut) {
 // --- LÓGICA DE LOGIN MEJORADA ---
 function loginUser(rut, password) {
   try {
-    // Validación básica de entrada
-    if (!rut || !password) {
-      logActivity('Intento de login sin credenciales', {rut: rut});
-      return { success: false, error: "RUT y contraseña son requeridos." };
-    }
+    if (!rut || !password) return { success: false, error: "RUT y contraseña son requeridos." };
     
-    // Validación de RUT
-    if (!_validateRut(rut)) {
-      logActivity('Intento de login con RUT inválido', {rut: rut});
-      return { success: false, error: "El RUT ingresado no es válido." };
-    }
-    
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RESIDENTES.name);
-    if (!sheet) {
-      logError('Hoja de residentes no encontrada', new Error('Hoja no encontrada'));
-      return { success: false, error: "Error al acceder a los datos de residentes." };
-    }
-    
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByGid(SHEETS.RESIDENTES.gid);
     const todosResidentes = _convertSheetToObjects(sheet);
-    if (todosResidentes.length === 0) {
-      logError('No hay residentes registrados', new Error('Sin datos'));
-      return { success: false, error: "No se encontraron residentes registrados." };
-    }
     
     const normalizedRut = _normalizeRut(rut);
     const residente = todosResidentes.find(r => _normalizeRut(r.Rut) === normalizedRut);
     
     if (!residente) {
-      // Retraso intencional para evitar timing attacks
-      Utilities.sleep(500);
-      logActivity('Intento de login con RUT no registrado', {rut: rut});
-      return { success: false, error: 'RUT o contraseña incorrectos.' };
+        Utilities.sleep(500);
+        return { success: false, error: 'RUT o contraseña incorrectos.' };
     }
     
-    // Verificación de contraseña
     if (residente.PasswordHash && residente.PasswordSalt) {
-      // Usuario con contraseña establecida
-      const hashAttempt = _hashPassword(password, residente.PasswordSalt);
-      if (hashAttempt === residente.PasswordHash) {
-        const token = Utilities.getUuid();
-        CacheService.getScriptCache().put(token, residente.Rut, CACHE_EXPIRATION);
-        
-        logActivity('Login exitoso', {rut: rut, method: 'password'});
-        return { 
-          success: true, 
-          action: 'login', 
-          token: token,
-          userData: {
-            nombre: residente.Nombre,
-            torre: residente.Torre,
-            depto: residente.Departamento,
-            rut: residente.Rut,
-            correo: residente.Correo,
-            fono: residente.Fono
-          }
-        };
-      }
+        if (_hashPassword(password, residente.PasswordSalt) === residente.PasswordHash) {
+            const token = Utilities.getUuid();
+            CacheService.getScriptCache().put(token, residente.Rut, CACHE_EXPIRATION);
+            return { success: true, action: 'login', token: token };
+        }
     } else {
-      // Usuario sin contraseña (primer acceso)
-      const rutDigits = normalizedRut.substring(0, normalizedRut.length - 1);
-      if (password === rutDigits.substring(0, 6)) {
-        const tempToken = Utilities.getUuid();
-        CacheService.getScriptCache().put(`temp_${tempToken}`, residente.Rut, TEMP_CACHE_EXPIRATION);
-        
-        logActivity('Primer acceso - Cambio de contraseña requerido', {rut: rut});
-        return { 
-          success: true, 
-          action: 'force_change', 
-          tempToken: tempToken,
-          userRut: residente.Rut
-        };
-      }
+        const rutDigits = normalizedRut.slice(0, -1);
+        if (password === rutDigits.substring(0, 6)) {
+            const tempToken = Utilities.getUuid();
+            CacheService.getScriptCache().put(`temp_${tempToken}`, residente.Rut, TEMP_CACHE_EXPIRATION);
+            return { success: true, action: 'force_change', tempToken: tempToken };
+        }
     }
     
-    Utilities.sleep(500); // Retraso para evitar timing attacks
-    logActivity('Intento de login con credenciales incorrectas', {rut: rut});
+    Utilities.sleep(500);
     return { success: false, error: 'RUT o contraseña incorrectos.' };
-    
   } catch (e) {
     console.error("Error en loginUser:", e);
-    logError('Error en loginUser', e);
-    return { 
-      success: false, 
-      error: 'Error en el servidor. Por favor, inténtalo más tarde.' 
-    };
+    return { success: false, error: 'Error en el servidor. Inténtalo más tarde.' };
   }
 }
 
 function setNewPassword(tempToken, newPassword) {
     try {
-        // Validaciones de entrada
         if (!tempToken || !newPassword || newPassword.length < 6) {
-            logActivity('Intento de cambio de contraseña con datos inválidos', {tempToken: !!tempToken, passLength: newPassword?.length});
-            return { 
-                success: false, 
-                error: 'La contraseña debe tener al menos 6 caracteres.' 
-            };
+            return { success: false, error: 'La contraseña debe tener al menos 6 caracteres.' };
         }
         
         const cache = CacheService.getScriptCache();
         const rut = cache.get(`temp_${tempToken}`);
-        
-        if (!rut) {
-            logActivity('Intento de cambio de contraseña con token expirado', {tempToken: tempToken});
-            return { 
-                success: false, 
-                error: 'La sesión para cambiar la contraseña ha expirado. Por favor, inicia sesión nuevamente.' 
-            };
-        }
+        if (!rut) return { success: false, error: 'La sesión para cambiar la contraseña ha expirado.' };
         
         cache.remove(`temp_${tempToken}`);
-        const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RESIDENTES.name);
-        
-        if (!sheet) {
-            throw new Error("No se pudo acceder a la hoja de Residentes.");
-        }
+        const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByGid(SHEETS.RESIDENTES.gid);
+        if (!sheet) throw new Error("No se pudo acceder a la hoja de Residentes.");
         
         const data = sheet.getDataRange().getValues();
         const headers = data.shift();
@@ -379,18 +327,10 @@ function setNewPassword(tempToken, newPassword) {
         const hashIndex = headers.indexOf("PasswordHash");
         const saltIndex = headers.indexOf("PasswordSalt");
 
-        if (hashIndex === -1 || saltIndex === -1) {
-            throw new Error("Configuración incompleta en la hoja de Residentes.");
-        }
+        if (hashIndex === -1 || saltIndex === -1) throw new Error("Columnas 'PasswordHash' o 'PasswordSalt' no encontradas.");
         
         const rowIndexInArray = data.findIndex(row => _normalizeRut(row[rutIndex]) === _normalizeRut(rut));
-        if (rowIndexInArray === -1) {
-            logActivity('Residente no encontrado al cambiar contraseña', {rut: rut});
-            return { 
-                success: false, 
-                error: 'No se encontró tu registro. Contacta al administrador.' 
-            };
-        }
+        if (rowIndexInArray === -1) return { success: false, error: 'No se encontró tu registro.' };
 
         const actualRowInSheet = rowIndexInArray + 2;
         const salt = Utilities.getUuid();
@@ -399,22 +339,10 @@ function setNewPassword(tempToken, newPassword) {
         sheet.getRange(actualRowInSheet, hashIndex + 1).setValue(hash);
         sheet.getRange(actualRowInSheet, saltIndex + 1).setValue(salt);
         
-        // Limpiar caché de residentes
-        const cacheKey = `sheet_${sheet.getSheetId()}_${sheet.getLastRow()}_${sheet.getLastColumn()}`;
-        CacheService.getScriptCache().remove(cacheKey);
-        
-        logActivity('Contraseña cambiada exitosamente', {rut: rut, method: 'first-time'});
-        return { 
-            success: true, 
-            message: '¡Contraseña actualizada con éxito! Ahora puedes iniciar sesión con tu nueva contraseña.' 
-        };
+        return { success: true, message: '¡Contraseña actualizada! Ahora puedes iniciar sesión.' };
     } catch (e) {
         console.error("Error en setNewPassword:", e);
-        logError('Error en setNewPassword', e);
-        return { 
-            success: false, 
-            error: 'Error al actualizar la contraseña. Por favor, inténtalo nuevamente.' 
-        };
+        return { success: false, error: 'Error al actualizar la contraseña.' };
     }
 }
 
