@@ -1,24 +1,24 @@
 //==========================================================
-//    PORTAL DE RESIDENTES - BACKEND (v14 - Mejorado y Completo)
+//    PORTAL DE RESIDENTES - BACKEND (v15 - Mejorado y Completo)
 // ==========================================================
 
 // IDs PRINCIPALES
-const SPREADSHEET_ID = '1lbioS5LjgsjJSSn_e8LUKusa0RGKXdDesfHrUG7-zJI';
-const FOTOS_FOLDER_ID = '1aYj5zToE3SrFN-X9oo_aDM0ij-F2HrI0';
-const LOGS_FOLDER_ID = '1eYoDgpzGdhLnN2nTUumMrf-s8jd_VAyE'; 
+const SPREADSHEET_ID = '2lbioS5LjgsjJSSn_e8LUKusa0RGKXdDesfHrUG7-zJI';
+const FOTOS_FOLDER_ID = '2aYj5zToE3SrFN-X9oo_aDM0ij-F2HrI0';
+const LOGS_FOLDER_ID = '2eYoDgpzGdhLnN2nTUumMrf-s8jd_VAyE'; 
 
 // GIDs DE LAS HOJAS (con validación)
 const SHEETS = {
-  RESIDENTES: { gid: 0, name: 'Residentes' },
-  VISITAS: { gid: 1409883976, name: 'Visitas' },
-  DEPARTAMENTOS: { gid: 1067842708, name: 'Departamentos' },
-  CONFIGURACION: { gid: 34039155, name: 'Configuración' },
-  ESTACIONAMIENTOS: { gid: 227107705, name: 'Estacionamientos' },
-  ENCOMIENDAS: { gid: 1197993248, name: 'Encomiendas' },
-  LAVANDERIA: { gid: 260781604, name: 'Lavandería' },
-  ASCENSORES: { gid: 605301846, name: 'Ascensores' },
-  MENSAJES: { gid: 837880582, name: 'Mensajes' },
-  RECUPERACION: { gid: 1247789216, name: 'Recuperación' } 
+  RESIDENTES: { gid: 1, name: 'Residentes' },
+  VISITAS: { gid: 1409883977, name: 'Visitas' },
+  DEPARTAMENTOS: { gid: 1067842709, name: 'Departamentos' },
+  CONFIGURACION: { gid: 34039156, name: 'Configuración' },
+  ESTACIONAMIENTOS: { gid: 227107706, name: 'Estacionamientos' },
+  ENCOMIENDAS: { gid: 1197993249, name: 'Encomiendas' },
+  LAVANDERIA: { gid: 260781605, name: 'Lavandería' },
+  ASCENSORES: { gid: 605301847, name: 'Ascensores' },
+  MENSAJES: { gid: 837880583, name: 'Mensajes' },
+  RECUPERACION: { gid: 1247789217, name: 'Recuperación' } 
 };
 
 // Cache de 30 minutos (1800 segundos)
@@ -26,98 +26,82 @@ const CACHE_EXPIRATION = 1800;
 const TEMP_CACHE_EXPIRATION = 300;
 
 // --- SERVIDOR WEB ---
-function doGet(e) {
-  try {
-    return HtmlService.createTemplateFromFile('Index').evaluate()
-      .setTitle('Portal de Residentes')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } catch (err) {
-    console.error("Error crítico en doGet:", err);
-    return HtmlService.createHtmlOutput(`<html><body><h1>Error del Servidor</h1><p>No se pudo cargar la aplicación.</p></body></html>`).setTitle("Error");
-  }
+function doGet() {
+  return HtmlService.createTemplateFromFile('Index').evaluate()
+    .setTitle("Portal de Residentes")
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 // --- OBTENER DATOS DE LA APLICACIÓN ---
 function getInitialData(token) {
-    try {
-        if (!token) return { success: false, error: 'Sesión inválida.' };
-        const cache = CacheService.getScriptCache();
-        const rut = cache.get(token);
-        if (!rut) return { success: false, error: 'Tu sesión ha expirado.' };
-        
-        cache.put(token, rut, CACHE_EXPIRATION);
-
-        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-        const allSheets = ss.getSheets();
-        const findSheet = (gid) => allSheets.find(s => s.getSheetId() == gid);
-        
-        const residenteActual = _convertSheetToObjects(findSheet(SHEETS.RESIDENTES.gid)).find(r => r.Rut === rut);
-        if (!residenteActual) return { success: false, error: 'No se pudo encontrar tu perfil.' };
-
-        // *** CORRECCIÓN CLAVE ***
-        residenteActual.Foto = getResidentPhotoUrl(residenteActual.Rut);
-
-        const configData = _convertSheetToObjects(findSheet(SHEETS.CONFIGURACION.gid));
-        const config = {};
-        configData.forEach(row => { if (row.Clave) config[row.Clave] = row.Valor; });
-        
-        // *** CORRECCIÓN CLAVE ***
-        config.LogoUrl = getLogoUrl();
-
-        const usosLavanderia = _convertSheetToObjects(findSheet(SHEETS.LAVANDERIA.gid)).filter(u => !u["Hora Termino"]);
-        const estacionamientos = _convertSheetToObjects(findSheet(SHEETS.ESTACIONAMIENTOS.gid));
-        
-        const servicios = {
-            ascensores: _convertSheetToObjects(findSheet(SHEETS.ASCENSORES.gid)),
-            lavadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Lavadora').length,
-            secadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Secadora').length,
-            estacionamientos: { total: estacionamientos.length, ocupados: estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length }
-        };
-
-        const mensajes = _convertSheetToObjects(findSheet(SHEETS.MENSAJES.gid)).filter(m => {
-            if (!m.Destinatario) return false;
-            const dest = m.Destinatario.toUpperCase();
-            return dest === 'TODOS' || dest === `T${residenteActual.Torre}` || dest === `T${residenteActual.Torre}-${residenteActual.Departamento}` || dest === _normalizeRut(residenteActual.Rut);
-        }).sort((a, b) => b.ID - a.ID);
-
-        return { success: true, data: { perfil: residenteActual, servicios, mensajes, config }};
-    } catch (e) {
-        console.error("Error en getInitialData:", e);
-        return { success: false, error: `Error cargando datos: ${e.message}` };
-    }
+  try {
+    if (!token) return { success: false, error: "Sesión inválida." };
+    const cache = CacheService.getScriptCache();
+    const rut = cache.get(token);
+    if (!rut) return { success: false, error: "Tu sesión ha expirado." };
+    cache.put(token, rut, CACHE_EXPIRATION);
+    return { success: true, data: _buildResidentResponse(rut) };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
+
 
 // --- FUNCIONES LAZY LOADING (OPTIMIZADAS) ---
-function getLazyData(token, dataType) {
-    try {
-        if (!token) return { success: false, error: "Sesión inválida." };
-        const cache = CacheService.getScriptCache();
-        const rut = cache.get(token);
-        if (!rut) return { success: false, error: "Tu sesión ha expirado." };
+function getLazyData(token, dataType, page, pageSize) {
+  try {
+    if (!token) return { success: false, error: "Sesión inválida." };
+    const cache = CacheService.getScriptCache();
+    const rut = cache.get(token);
+    if (!rut) return { success: false, error: "Sesión expirada." };
 
-        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-        const residente = _convertSheetToObjects(ss.getSheetByGid(SHEETS.RESIDENTES.gid)).find(r => r.Rut === rut);
-        if (!residente) throw new Error("Perfil no encontrado.");
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const residente = _convertSheetToObjects(ss.getSheetByGid(SHEETS.RESIDENTES.gid))
+      .find(r => _normalizeRut(r.Rut) === _normalizeRut(rut));
+    if (!residente) throw new Error("Residente no encontrado.");
 
-        let data;
-        if (dataType === 'encomiendas') {
-            const sheet = ss.getSheetByGid(SHEETS.ENCOMIENDAS.gid);
-            data = _convertSheetToObjects(sheet).filter(e => e.Torre == residente.Torre && e.Departamento == residente.Departamento && String(e.Estado).toUpperCase() === 'PENDIENTE');
-        } else if (dataType === 'visitas') {
-            const sheet = ss.getSheetByGid(SHEETS.VISITAS.gid);
-            data = _convertSheetToObjects(sheet).filter(v => v.Torre == residente.Torre && v.Departamento == residente.Departamento).sort((a, b) => b.ID - a.ID).slice(0, 20);
-        } else {
-            return { success: false, error: "Tipo de dato no válido." };
-        }
-        
-        return { success: true, data: data };
-    } catch (e) {
-        console.error(`Error en getLazyData (${dataType}):`, e);
-        return { success: false, error: e.message };
+    let data = [];
+
+    if (dataType === 'encomiendas') {
+      const sheet = ss.getSheetByGid(SHEETS.ENCOMIENDAS.gid);
+      data = _convertSheetToObjects(sheet).filter(e =>
+        e.Torre == residente.Torre &&
+        e.Departamento == residente.Departamento &&
+        String(e.Estado).toUpperCase() === 'PENDIENTE'
+      );
+    } else if (dataType === 'visitas') {
+      const sheet = ss.getSheetByGid(SHEETS.VISITAS.gid);
+      data = _convertSheetToObjects(sheet).filter(v =>
+        v.Torre == residente.Torre && v.Departamento == residente.Departamento
+      ).sort((a, b) => parseInt(b.ID || 0) - parseInt(a.ID || 0));
+    } else if (dataType === 'mensajes') {
+      const sheet = ss.getSheetByGid(SHEETS.MENSAJES.gid);
+      data = _convertSheetToObjects(sheet).filter(m => {
+        const dest = (m.Destinatario || '').toUpperCase();
+        return dest === 'TODOS' ||
+               dest === `T${residente.Torre}` ||
+               dest === `T${residente.Torre}-${residente.Departamento}` ||
+               dest === _normalizeRut(residente.Rut);
+      }).sort((a, b) => {
+        const dateA = new Date(`${a.Fecha || ''} ${a.Hora || ''}`);
+        const dateB = new Date(`${b.Fecha || ''} ${b.Hora || ''}`);
+        return dateB - dateA;
+      });
+    } else {
+      return { success: false, error: "Tipo inválido." };
     }
-}
 
+    const total = data.length;
+    const start = (page - 1) * pageSize;
+    const paged = data.slice(start, start + pageSize);
+
+    return { success: true, data: paged, total: total };
+
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
 
 // --- LOGGING Y AUDITORÍA ---
 function logActivity(action, details = {}) {
@@ -169,8 +153,7 @@ function logError(context, error) {
 
 // --- UTILIDADES MEJORADAS ---
 function _normalizeRut(rut) {
-    if (!rut) return '';
-    return rut.toString().replace(/[.\-\s]/g, '').toUpperCase();
+  return rut ? rut.replace(/[.\-\s]/g, '').toUpperCase() : '';
 }
 
 function _validateRut(rut) {
@@ -218,12 +201,12 @@ function _generateTempPassword() {
  * Función optimizada para convertir hojas a objetos con caché
  */
 function _convertSheetToObjects(sheet) {
-  if (!sheet || sheet.getLastRow() < 2) return [];
-  const data = sheet.getDataRange().getDisplayValues();
-  const headers = data.shift().map(h => h ? h.toString().trim() : '');
-  return data.map((row) => {
+  if (!sheet) return [];
+  const data = sheet.getDataRange().getValues();
+  const headers = data.shift();
+  return data.map(row => {
     const obj = {};
-    headers.forEach((header, i) => { if (header) obj[header] = row[i]; });
+    headers.forEach((key, i) => obj[key] = row[i]);
     return obj;
   });
 }
@@ -233,36 +216,25 @@ function _convertSheetToObjects(sheet) {
 function getLogoUrl() {
   try {
     const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
-    const files = folder.getFilesByName('LogoCDA.jpg');
-    if (files.hasNext()) {
-      // *** CORRECCIÓN CLAVE ***
-      return "https://drive.google.com/uc?export=view&id=" + files.next().getId();
-    }
-    return null;
+    const file = folder.getFilesByName('LogoCDA.jpg');
+    return file.hasNext() ? "https://drive.google.com/uc?export=view&id=" + file.next().getId() : null;
   } catch (e) {
-    console.error("Error al obtener logo:", e);
     return null;
   }
 }
 
 function getResidentPhotoUrl(rut) {
-  if (!rut) return null;
   try {
     const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
-    
-    // Búsqueda flexible. Google Drive a veces no encuentra por nombre exacto con caracteres especiales.
     const files = folder.getFiles();
     while (files.hasNext()) {
       const file = files.next();
-      // Comparamos el nombre del archivo sin extensión con el rut.
       if (file.getName().split('.')[0] === rut) {
-        // *** CORRECCIÓN CLAVE ***
         return "https://drive.google.com/uc?export=view&id=" + file.getId();
       }
     }
     return null;
   } catch (e) {
-    console.error("Error en getResidentPhotoUrl:", e);
     return null;
   }
 }
@@ -475,14 +447,10 @@ function getResidentDataWithToken(token) {
             });
         
         // Preparar respuesta
-        const responseData = { 
-            perfil: residenteActual, 
-            servicios, 
-            encomiendas, 
-            visitas, 
-            mensajes, 
-            config 
-        };
+        const responseData = _buildResidentResponse(rut);
+cache.put(cacheKey, JSON.stringify(responseData), 300);
+logActivity('Datos de residente cargados', {rut});
+return { success: true, data: responseData };
         
         // Almacenar en caché
         cache.put(cacheKey, JSON.stringify(responseData), 300); // 5 minutos de caché
@@ -757,3 +725,67 @@ function resetPasswordWithToken(token, newPassword) {
         };
     }
 }
+function _buildResidentResponse(rut) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheets = ss.getSheets();
+  const findSheet = gid => sheets.find(s => s.getSheetId() == gid);
+
+  const residente = _convertSheetToObjects(findSheet(SHEETS.RESIDENTES.gid))
+    .find(r => _normalizeRut(r.Rut) === _normalizeRut(rut));
+  if (!residente) throw new Error("Residente no encontrado");
+
+  residente.FotoUrl = getResidentPhotoUrl(rut);
+
+  const configSheet = findSheet(SHEETS.CONFIGURACION.gid);
+  const config = {};
+  _convertSheetToObjects(configSheet).forEach(row => {
+    if (row.Clave) config[row.Clave] = row.Valor;
+  });
+  config.LogoUrl = getLogoUrl();
+
+  const usosLavanderia = _convertSheetToObjects(findSheet(SHEETS.LAVANDERIA.gid)).filter(u => !u["Hora Termino"]);
+  const estacionamientos = _convertSheetToObjects(findSheet(SHEETS.ESTACIONAMIENTOS.gid));
+
+  const servicios = {
+    ascensores: _convertSheetToObjects(findSheet(SHEETS.ASCENSORES.gid)),
+    lavadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Lavadora').length,
+    secadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Secadora').length,
+    estacionamientos: {
+      total: estacionamientos.length,
+      ocupados: estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length
+    }
+  };
+
+  const mensajes = _convertSheetToObjects(findSheet(SHEETS.MENSAJES.gid)).filter(m => {
+    const dest = (m.Destinatario || '').toUpperCase();
+    return dest === 'TODOS' ||
+           dest === `T${residente.Torre}` ||
+           dest === `T${residente.Torre}-${residente.Departamento}` ||
+           dest === _normalizeRut(residente.Rut);
+  });
+
+  return { perfil: residente, servicios, mensajes, config };
+}
+
+function enviarNotificacionPush(token, titulo, cuerpo) {
+  const payload = {
+    to: token,
+    notification: {
+      title: titulo,
+      body: cuerpo
+    }
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'key=AIzaSyAVTtzogO4pF-K5de5sNRE7t6HkZujuoVk'
+    },
+    payload: JSON.stringify(payload)
+  };
+
+  const response = UrlFetchApp.fetch("https://fcm.googleapis.com/fcm/send", options);
+  Logger.log(response.getContentText());
+}
+

@@ -581,6 +581,9 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Constantes y variables globales
+        const itemsPerPage = 10;
+  let currentPage = { encomiendas: 1, visitas: 1, mensajes: 1 };
+  let sessionToken = sessionStorage.getItem('sessionToken') || null;
         let changePasswordModal;
         const placeholderSvg = "data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' fill='%23cccccc' class='bi bi-person-circle' viewBox='0 0 16 16'%3e%3cpath d='M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'/%3e%3cpath fill-rule='evenodd' d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z'/%3e%3c/svg%3e";
         let sessionToken = null;
@@ -592,6 +595,77 @@
         };
         const itemsPerPage = 10;
         
+       // Validación de RUT chileno
+  function validarRut(rut) {
+    rut = rut.replace(/[.-]/g, '').toUpperCase();
+    if (rut.length < 2) return false;
+    const cuerpo = rut.slice(0, -1), dv = rut.slice(-1);
+    let suma = 0, multiplo = 2;
+    for (let i = cuerpo.length - 1; i >= 0; i--) {
+      suma += parseInt(cuerpo.charAt(i)) * multiplo;
+      multiplo = multiplo === 7 ? 2 : multiplo + 1;
+    }
+    const dvEsperado = 11 - (suma % 11);
+    const dvCalculado = dvEsperado === 11 ? '0' : dvEsperado === 10 ? 'K' : dvEsperado.toString();
+    return dvCalculado === dv;
+  }
+
+// Validación simple de email
+  function validarEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+function loadLazyData(type, page = 1) {
+    showLoader(true, 'Cargando...');
+    google.script.run
+      .withSuccessHandler(res => {
+        showLoader(false);
+        if (!res.success) return showToast('Error', res.error, 'error');
+        renderPaginated(type, res.data, res.total);
+        currentPage[type] = page;
+      })
+      .withFailureHandler(err => {
+        showLoader(false);
+        showToast('Error', 'No se pudo conectar al servidor.', 'error');
+      })
+      .getLazyData(sessionToken, type, page, itemsPerPage);
+  }
+ // Renderizar y configurar paginación
+  function renderPaginated(type, data, total) {
+    const renderers = {
+      encomiendas: renderEncomiendas,
+      visitas: renderVisits,
+      mensajes: renderMessagesList
+    };
+    if (renderers[type]) renderers[type](data);
+    setupPagination(type, total);
+  }
+
+  function setupPagination(type, totalItems) {
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const container = document.getElementById(`${type}-pagination`);
+    if (!container) return;
+    if (totalPages <= 1) return container.classList.add('d-none');
+
+    let html = `<ul class="pagination pagination-sm justify-content-center">`;
+    for (let i = 1; i <= totalPages; i++) {
+      html += `
+        <li class="page-item ${currentPage[type] === i ? 'active' : ''}">
+          <a class="page-link" href="#" onclick="loadLazyData('${type}', ${i})">${i}</a>
+        </li>`;
+    }
+    html += `</ul>`;
+    container.innerHTML = html;
+    container.classList.remove('d-none');
+  }
+
+  // Reemplaza localStorage por sessionStorage al iniciar sesión
+  function handleLoginSuccess(token) {
+    sessionStorage.setItem('sessionToken', token);
+    sessionToken = token;
+    loadResidentData(); // función existente
+  }
+
         // Inicialización de componentes
         const changePasswordModal = new bootstrap.Modal('#changePasswordModal');
         const voluntaryChangePasswordModal = new bootstrap.Modal('#voluntaryChangePasswordModal');
@@ -1365,9 +1439,12 @@
         // Event listeners
         document.addEventListener('DOMContentLoaded', function() {
             // Formatear RUT automáticamente
-            document.getElementById('login-rut').addEventListener('input', function() {
-                formatRut(this);
-            });
+            document.getElementById('login-rut').addEventListener('blur', e => {
+    e.target.classList.toggle('is-invalid', !validarRut(e.target.value));
+  });
+  document.getElementById('recovery-email').addEventListener('blur', e => {
+    e.target.classList.toggle('is-invalid', !validarEmail(e.target.value));
+  });
             document.getElementById('recovery-rut').addEventListener('input', function() {
                 formatRut(this);
             });
@@ -1444,6 +1521,76 @@
             // Verificar sesión al cargar
             checkSessionOnLoad();
         });
+
+        // Al cargar página, verifica sesión
+  window.addEventListener('DOMContentLoaded', () => {
+    const token = sessionStorage.getItem('sessionToken');
+    if (token) {
+      sessionToken = token;
+      loadResidentData();
+    }
+  });
+
+  // Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js')
+      .then(() => console.log('Service Worker registrado'))
+      .catch(err => console.error('SW error:', err));
+  }
+ 
     </script>
+    
+<script src="https://www.gstatic.com/firebasejs/10.12.1/firebase-messaging.js"></script>
+<script>
+  // Tu configuración de Firebase:
+   // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyAVTtzogO4pF-K5de5sNRE7t6HkZujuoVk",
+    authDomain: "condominioappresidente.firebaseapp.com",
+    projectId: "condominioappresidente",
+    storageBucket: "condominioappresidente.firebasestorage.app",
+    messagingSenderId: "646381236219",
+    appId: "1:646381236219:web:bbe4577f1ab8e84123655e",
+    measurementId: "G-K1PEPPE19X"
+  };
+
+  // Inicializa Firebase
+  firebase.initializeApp(firebaseConfig);
+  const messaging = firebase.messaging();
+
+  // Solicitar permiso
+  function solicitarPermisoNotificaciones() {
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') {
+        messaging.getToken({ vapidKey: firebaseConfig.vapidKey }).then(token => {
+          console.log('Token FCM:', token);
+          // Aquí puedes guardar este token en tu Google Sheet o Apps Script
+        }).catch(err => {
+          console.error('Error al obtener token:', err);
+        });
+      } else {
+        console.log('Permiso denegado');
+      }
+    });
+  }
+
+  // Escuchar mensajes en primer plano
+  messaging.onMessage(payload => {
+    console.log('Mensaje recibido:', payload);
+    showToast(payload.notification?.title || 'Mensaje', payload.notification?.body || '', 'info');
+  });
+
+  // Llamar al solicitar permiso al iniciar sesión
+  window.addEventListener('DOMContentLoaded', () => {
+    solicitarPermisoNotificaciones();
+  });
+</script>
 </body>
 </html>

@@ -1,0 +1,25 @@
+<script>
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open('portal-residentes-v1').then(cache => {
+      return cache.addAll(['/']);
+    })
+  );
+});
+
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    caches.match(event.request).then(resp => resp || fetch(event.request))
+  );
+});
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('firebase-messaging-sw.js')
+    .then(reg => {
+      console.log('SW Firebase registrado');
+    })
+    .catch(err => console.error('SW Firebase error:', err));
+}
+
+</script>
+
