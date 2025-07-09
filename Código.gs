@@ -1,10 +1,10 @@
-// ==========================================================
+//==========================================================
 //    PORTAL DE RESIDENTES - BACKEND (v14 - Mejorado y Completo)
 // ==========================================================
 
 // IDs PRINCIPALES
 const SPREADSHEET_ID = '1lbioS5LjgsjJSSn_e8LUKusa0RGKXdDesfHrUG7-zJI';
-const FOTOS_FOLDER_ID = '1YinETeXv-G5XsH-1VuDtFD4Dl3YTcxqB';
+const FOTOS_FOLDER_ID = '1aYj5zToE3SrFN-X9oo_aDM0ij-F2HrI0';
 const LOGS_FOLDER_ID = '1eYoDgpzGdhLnN2nTUumMrf-s8jd_VAyE'; 
 
 // GIDs DE LAS HOJAS (con validación)
@@ -181,7 +181,7 @@ function _convertSheetToObjects(sheet) {
 function getLogoUrl() {
   try {
     const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
-    const files = folder.getFilesByName('logo.png');
+    const files = folder.getFilesByName('LogoCDA.jpg');
     
     if (files.hasNext()) {
       const file = files.next();
@@ -198,27 +198,57 @@ function getLogoUrl() {
 }
 
 function getResidentPhotoUrl(rut) {
+  if (!rut) {
+    console.error("Error: RUT no proporcionado");
+    return null;
+  }
+
   try {
-    if (!rut) return null;
+    // Elimina espacios en blanco que podrían causar problemas
+    const cleanRut = rut.toString().trim();
+    console.log(`Buscando foto para RUT exacto: ${cleanRut}`);
     
-    const normalizedRut = _normalizeRut(rut);
     const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
+    
+    // 1. Primera búsqueda: Nombre exacto "12.345.678-9.jpg"
+    const exactFileName = cleanRut + ".jpg";
+    const exactFile = folder.getFilesByName(exactFileName);
+    
+    if (exactFile.hasNext()) {
+      const file = exactFile.next();
+      console.log(`Encontrado por nombre exacto: ${exactFileName}`);
+      return "https://drive.google.com/uc?export=view&id=" + file.getId();
+    }
+    
+    // 2. Segunda búsqueda: "12.345.678-9" (sin extensión)
+    const exactFileWithoutExt = folder.getFilesByName(cleanRut);
+    if (exactFileWithoutExt.hasNext()) {
+      const file = exactFileWithoutExt.next();
+      console.log(`Encontrado por nombre sin extensión: ${cleanRut}`);
+      return "https://drive.google.com/uc?export=view&id=" + file.getId();
+    }
+    
+    // 3. Búsqueda flexible si las anteriores fallan
+    console.log("No se encontró coincidencia exacta, realizando búsqueda flexible...");
     const files = folder.getFiles();
+    let fileCount = 0;
     
     while (files.hasNext()) {
+      fileCount++;
       const file = files.next();
-      const fileName = file.getName().toUpperCase();
+      const fileName = file.getName();
       
-      if (fileName.includes(normalizedRut)) {
-        logActivity('Foto de residente cargada', {rut: rut, fileId: file.getId()});
-        return file.getUrl();
+      // Compara eliminando espacios y cambiando a minúsculas
+      if (fileName.trim().toLowerCase() === exactFileName.toLowerCase()) {
+        console.log(`Coincidencia flexible encontrada: ${fileName}`);
+        return "https://drive.google.com/uc?export=view&id=" + file.getId();
       }
     }
     
+    console.log(`No se encontró foto. Archivos revisados: ${fileCount}`);
     return null;
   } catch (e) {
-    console.error("Error al obtener foto de residente:", e);
-    logError('Error al obtener foto de residente', e);
+    console.error("Error en getResidentPhotoUrl:", e);
     return null;
   }
 }
