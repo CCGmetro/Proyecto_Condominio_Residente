@@ -2,156 +2,626 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Portal de Residentes</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .form-container { max-width: 400px; margin: 5rem auto; padding: 2rem; background: #fff; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+        }
+        
+        body { 
+            background-color: #f0f2f5; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        .form-container { 
+            max-width: 400px; 
+            margin: 2rem auto; 
+            padding: 1.5rem; 
+            background: #fff; 
+            border-radius: 0.75rem; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+        }
+        
         .main-app-container { display: none; }
-        .loader-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
-        .profile-pic { width: 100px; height: 100px; object-fit: cover; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .nav-pills .nav-link { border-radius: 0.5rem; color: #6c757d;}
-        .nav-pills .nav-link.active { background-color: #0d6efd; color: white; }
-        .card { border-radius: 0.75rem; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .tab-content .tab-pane { padding: 1rem 0; }
-        .tab-pane .spinner-border { margin-top: 3rem; }
-        .badge-operativo { background-color: #198754 !important; }
-        .badge-falla { background-color: #dc3545 !important; }
+        
+        .loader-container { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(255,255,255,0.9); 
+            z-index: 9999; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            backdrop-filter: blur(4px); 
+        }
+        
+        .profile-pic { 
+            width: 100px; 
+            height: 100px; 
+            object-fit: cover; 
+            border-radius: 50%; 
+            border: 3px solid #fff; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+            background-color: #f0f0f0;
+        }
+        
+        .nav-pills .nav-link { 
+            border-radius: 0.5rem; 
+            color: var(--secondary-color);
+            padding: 0.75rem;
+            font-size: 0.8rem;
+        }
+        
+        .nav-pills .nav-link.active { 
+            background-color: var(--primary-color); 
+            color: white; 
+        }
+        
+        .card { 
+            border-radius: 0.75rem; 
+            border: none; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+            margin-bottom: 1rem;
+        }
+        
+        .tab-content .tab-pane { padding: 0.5rem 0; }
+        
+        .badge-operativo { background-color: var(--success-color) !important; }
+        .badge-falla { background-color: var(--danger-color) !important; }
+        
+        /* Mejoras para móviles */
+        @media (max-width: 576px) {
+            .form-container {
+                margin: 1rem auto;
+                padding: 1rem;
+                border-radius: 0;
+                box-shadow: none;
+            }
+            
+            .nav-pills .nav-link {
+                padding: 0.5rem;
+                font-size: 0.7rem;
+            }
+            
+            .profile-pic {
+                width: 80px;
+                height: 80px;
+            }
+        }
+        
+        /* Safe area para iPhone X y similares */
+        @supports(padding: max(0px)) {
+            body {
+                padding-left: max(0.75rem, env(safe-area-inset-left));
+                padding-right: max(0.75rem, env(safe-area-inset-right));
+            }
+        }
+        
+        .logo-img {
+            max-height: 50px;
+            max-width: 100%;
+            object-fit: contain;
+        }
+        
+        .header-logo {
+            height: 40px;
+            max-width: 100%;
+            object-fit: contain;
+            margin-right: 10px;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+        }
+        
+        #login-logo {
+            max-height: 80px;
+            max-width: 100%;
+            margin-bottom: 15px;
+        }
+        
+        /* Mejoras de accesibilidad */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        
+        /* Paginación */
+        .pagination {
+            justify-content: center;
+            margin-top: 1rem;
+        }
+        
+        .page-item.disabled .page-link {
+            color: #6c757d;
+        }
+        
+        .page-item.active .page-link {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        /* Formulario de recuperación */
+        #recovery-view {
+            display: none;
+        }
+        
+        #reset-password-view {
+            display: none;
+        }
+        
+        @media (max-width: 576px) {
+            .header-logo {
+                height: 30px;
+            }
+            
+            #login-logo {
+                max-height: 60px;
+            }
+        }
     </style>
 </head>
 <body>
-
     <!-- VISTA DE LOGIN -->
     <div id="login-view">
         <div class="form-container">
-            <h2 class="text-center mb-1">Bienvenido</h2>
-            <p class="text-center text-muted mb-4">Portal de Residentes</p>
+            <div class="text-center mb-4">
+                <img id="login-logo" src="" alt="Logo Condominio" class="logo-img mb-3">
+                <h2 class="mb-1">Bienvenido</h2>
+                <p class="text-muted">Portal de Residentes</p>
+            </div>
             <form id="login-form">
                 <div class="form-floating mb-3">
-                    <input type="text" class="form-control" id="login-rut" placeholder="12.345.678-9" required>
+                    <input type="text" class="form-control" id="login-rut" placeholder="12.345.678-9" required autocomplete="username">
                     <label for="login-rut">RUT</label>
                 </div>
                 <div class="form-floating mb-3">
-                    <input type="password" class="form-control" id="login-password" placeholder="Contraseña" required>
+                    <input type="password" class="form-control" id="login-password" placeholder="Contraseña" required autocomplete="current-password">
                     <label for="login-password">Contraseña</label>
                 </div>
-                <div class="d-grid">
-                    <button type="submit" class="btn btn-primary btn-lg">Ingresar</button>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary btn-lg" id="login-btn">
+                        <span id="login-btn-text">Ingresar</span>
+                        <span id="login-btn-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                        <span class="visually-hidden">Cargando...</span>
+                    </button>
                 </div>
             </form>
-            <div id="login-error" class="alert alert-danger mt-3 d-none"></div>
+            <div id="login-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+            <div class="text-center mt-3">
+                <a href="#" id="forgot-password-link" class="small">¿Olvidaste tu contraseña?</a>
+            </div>
             <p class="text-center small mt-3 text-muted">En tu primer acceso, tu contraseña son los <strong>primeros 6 dígitos de tu RUT</strong>.</p>
         </div>
     </div>
 
+    <!-- VISTA DE RECUPERACIÓN DE CONTRASEÑA -->
+    <div id="recovery-view" class="form-container">
+        <div class="text-center mb-4">
+            <img id="recovery-logo" src="" alt="Logo Condominio" class="logo-img mb-3">
+            <h2 class="mb-1">Recuperar Contraseña</h2>
+            <p class="text-muted">Ingresa tu RUT y correo electrónico</p>
+        </div>
+        <form id="recovery-form">
+            <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="recovery-rut" placeholder="12.345.678-9" required>
+                <label for="recovery-rut">RUT</label>
+            </div>
+            <div class="form-floating mb-3">
+                <input type="email" class="form-control" id="recovery-email" placeholder="correo@ejemplo.com" required>
+                <label for="recovery-email">Correo Electrónico</label>
+            </div>
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary" id="recovery-btn">
+                    <span id="recovery-btn-text">Enviar Enlace</span>
+                    <span id="recovery-btn-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="back-to-login-btn">
+                    Volver al inicio de sesión
+                </button>
+            </div>
+        </form>
+        <div id="recovery-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+        <div id="recovery-success" class="alert alert-success mt-3 d-none" role="alert"></div>
+    </div>
+
+    <!-- VISTA DE RESETEO DE CONTRASEÑA -->
+    <div id="reset-password-view" class="form-container">
+        <div class="text-center mb-4">
+            <img id="reset-logo" src="" alt="Logo Condominio" class="logo-img mb-3">
+            <h2 class="mb-1">Restablecer Contraseña</h2>
+            <p class="text-muted">Crea una nueva contraseña</p>
+        </div>
+        <form id="reset-password-form">
+            <div class="form-floating mb-3">
+                <input type="password" class="form-control" id="reset-new-password" placeholder="Nueva Contraseña" required minlength="6">
+                <label for="reset-new-password">Nueva Contraseña</label>
+            </div>
+            <div class="form-floating mb-3">
+                <input type="password" class="form-control" id="reset-confirm-password" placeholder="Confirmar Contraseña" required>
+                <label for="reset-confirm-password">Confirmar Contraseña</label>
+            </div>
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary" id="reset-password-btn">
+                    <span id="reset-password-btn-text">Guardar Contraseña</span>
+                    <span id="reset-password-btn-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                </button>
+            </div>
+        </form>
+        <div id="reset-password-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+    </div>
+
     <!-- VISTA DE LA APP PRINCIPAL -->
     <div id="main-content" class="main-app-container">
-        <header class="bg-primary text-white p-3">
+        <header class="bg-primary text-white p-3 sticky-top">
             <div class="d-flex justify-content-between align-items-center">
-                <span></span>
+               <div id="logo-container" class="logo-container">
+                </div>
+                <button class="btn btn-sm btn-outline-light" id="refresh-btn" title="Actualizar" aria-label="Actualizar datos">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
                 <div class="text-center">
                     <h1 class="h5 mb-0" id="condo-name">Condominio</h1>
                     <small id="welcome-message">Bienvenido/a</small>
                 </div>
-                <button class="btn btn-danger btn-sm" id="logout-btn" title="Cerrar Sesión"><i class="bi bi-box-arrow-right"></i></button>
+                <button class="btn btn-sm btn-outline-light" id="logout-btn" title="Cerrar Sesión" aria-label="Cerrar sesión">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
             </div>
         </header>
         
-        <div class="container-fluid p-2">
-             <ul class="nav nav-pills nav-fill" id="myTab" role="tablist">
-                <li class="nav-item" role="presentation"><button class="nav-link active" id="home-tab" data-bs-toggle="tab" data-bs-target="#home-tab-pane" type="button" role="tab"><i class="bi bi-speedometer2 d-block fs-4"></i><small>Inicio</small></button></li>
-                <li class="nav-item" role="presentation"><button class="nav-link" id="packages-tab" data-bs-toggle="tab" data-bs-target="#packages-tab-pane" type="button" role="tab"><i class="bi bi-box-seam d-block fs-4"></i><small>Paquetes</small></button></li>
-                <li class="nav-item" role="presentation"><button class="nav-link" id="visits-tab" data-bs-toggle="tab" data-bs-target="#visits-tab-pane" type="button" role="tab"><i class="bi bi-people d-block fs-4"></i><small>Visitas</small></button></li>
-                <li class="nav-item" role="presentation"><button class="nav-link" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile-tab-pane" type="button" role="tab"><i class="bi bi-person-circle d-block fs-4"></i><small>Perfil</small></button></li>
+        <div class="container-fluid p-0">
+            <ul class="nav nav-pills nav-fill border-bottom" id="main-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="home-tab" data-bs-toggle="tab" data-bs-target="#home-tab-pane" type="button" role="tab" aria-controls="home-tab-pane" aria-selected="true">
+                        <i class="bi bi-speedometer2 d-block fs-5 mb-1"></i>
+                        <small>Inicio</small>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="encomiendas-tab" data-bs-toggle="tab" data-bs-target="#encomiendas-tab-pane" type="button" role="tab" aria-controls="encomiendas-tab-pane" aria-selected="false">
+                        <i class="bi bi-box-seam d-block fs-5 mb-1"></i>
+                        <small>Encomiendas</small>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="visits-tab" data-bs-toggle="tab" data-bs-target="#visits-tab-pane" type="button" role="tab" aria-controls="visits-tab-pane" aria-selected="false">
+                        <i class="bi bi-people d-block fs-5 mb-1"></i>
+                        <small>Visitas</small>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="messages-tab" data-bs-toggle="tab" data-bs-target="#messages-tab-pane" type="button" role="tab" aria-controls="messages-tab-pane" aria-selected="false">
+                        <i class="bi bi-chat-left-text d-block fs-5 mb-1"></i>
+                        <small>Mensajes</small>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile-tab-pane" type="button" role="tab" aria-controls="profile-tab-pane" aria-selected="false">
+                        <i class="bi bi-person-circle d-block fs-5 mb-1"></i>
+                        <small>Perfil</small>
+                    </button>
+                </li>
             </ul>
         </div>
         
-        <div class="tab-content" id="myTabContent">
+        <div class="tab-content p-2" id="main-tab-content">
             <!-- Pestaña Inicio -->
-            <div class="tab-pane fade show active" id="home-tab-pane" role="tabpanel">
-                <div class="container">
-                    <div id="messages-container" class="mb-3"></div>
-                    <div class="card mb-3"><div class="card-header fw-bold"><i class="bi bi-lift me-2"></i>Estado de Ascensores</div><ul class="list-group list-group-flush" id="ascensores-status"></ul></div>
-                    <div class="card mb-3"><div class="card-header fw-bold"><i class="bi bi-p-circle-fill me-2"></i>Estacionamientos de Visita</div><div class="card-body" id="estacionamientos-status"></div></div>
-                    <div class="card"><div class="card-header fw-bold"><i class="bi bi-water me-2"></i>Lavandería</div><div class="card-body" id="lavanderia-status"></div></div>
+            <div class="tab-pane fade show active" id="home-tab-pane" role="tabpanel" tabindex="0" aria-labelledby="home-tab">
+                <div id="messages-container" class="mb-3"></div>
+                
+                <div class="card mb-3">
+                    <div class="card-header fw-bold bg-light">
+                        <i class="bi bi-lift me-2"></i>Estado de Ascensores
+                    </div>
+                    <ul class="list-group list-group-flush" id="ascensores-status"></ul>
+                </div>
+                
+                <div class="card mb-3">
+                    <div class="card-header fw-bold bg-light">
+                        <i class="bi bi-p-circle-fill me-2"></i>Estacionamientos de Visita
+                    </div>
+                    <div class="card-body" id="estacionamientos-status"></div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header fw-bold bg-light">
+                        <i class="bi bi-water me-2"></i>Lavandería
+                    </div>
+                    <div class="card-body" id="lavanderia-status"></div>
                 </div>
             </div>
 
-            <!-- Pestaña Paquetes -->
-            <div class="tab-pane fade text-center" id="packages-tab-pane" role="tabpanel" data-loaded="false">
-                <div class="container" id="packages-list">
-                    <!-- El spinner se pondrá aquí con JS -->
+            <!-- Pestaña Encomiendas -->
+            <div class="tab-pane fade" id="encomiendas-tab-pane" role="tabpanel" tabindex="0" aria-labelledby="encomiendas-tab">
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-outline-primary w-100" id="refresh-encomiendas-btn">
+                        <i class="bi bi-arrow-clockwise"></i> Actualizar
+                    </button>
                 </div>
+                <div id="encomiendas-list"></div>
+                <nav id="encomiendas-pagination" class="d-none">
+                    <ul class="pagination pagination-sm justify-content-center">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Anterior</a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">Siguiente</a>
+                        </li>
+                    </ul>
+                </nav>
             </div>
             
             <!-- Pestaña Visitas -->
-            <div class="tab-pane fade text-center" id="visits-tab-pane" role="tabpanel" data-loaded="false">
-                <div class="container" id="visits-history">
-                    <!-- El spinner se pondrá aquí con JS -->
+            <div class="tab-pane fade" id="visits-tab-pane" role="tabpanel" tabindex="0" aria-labelledby="visits-tab">
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-outline-primary w-100" id="refresh-visits-btn">
+                        <i class="bi bi-arrow-clockwise"></i> Actualizar
+                    </button>
                 </div>
+                <div id="visits-history"></div>
+                <nav id="visits-pagination" class="d-none">
+                    <ul class="pagination pagination-sm justify-content-center">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Anterior</a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">Siguiente</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+            
+            <!-- Pestaña Mensajes -->
+            <div class="tab-pane fade" id="messages-tab-pane" role="tabpanel" tabindex="0" aria-labelledby="messages-tab">
+                <div class="mb-3">
+                    <button class="btn btn-sm btn-outline-primary w-100" id="refresh-messages-btn">
+                        <i class="bi bi-arrow-clockwise"></i> Actualizar
+                    </button>
+                </div>
+                <div id="messages-list" class="list-group"></div>
+                <nav id="messages-pagination" class="d-none">
+                    <ul class="pagination pagination-sm justify-content-center">
+                        <li class="page-item disabled">
+                            <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Anterior</a>
+                        </li>
+                        <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                        <li class="page-item"><a class="page-link" href="#">2</a></li>
+                        <li class="page-item"><a class="page-link" href="#">3</a></li>
+                        <li class="page-item">
+                            <a class="page-link" href="#">Siguiente</a>
+                        </li>
+                    </ul>
+                </nav>
             </div>
 
             <!-- Pestaña Perfil -->
-            <div class="tab-pane fade" id="profile-tab-pane" role="tabpanel">
-                <div class="container">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <img id="profile-pic" src="" class="profile-pic mb-3">
-                            <h5 id="profile-name"></h5>
-                            <p class="text-muted" id="profile-depto"></p>
-                        </div>
-                        <ul class="list-group list-group-flush">
-                           <li class="list-group-item"><strong>RUT:</strong> <span id="profile-rut"></span></li>
-                           <li class="list-group-item"><strong>Email:</strong> <span id="profile-correo"></span></li>
-                           <li class="list-group-item"><strong>Teléfono:</strong> <span id="profile-fono"></span></li>
-                        </ul>
+            <div class="tab-pane fade" id="profile-tab-pane" role="tabpanel" tabindex="0" aria-labelledby="profile-tab">
+                <div class="card mb-3">
+                    <div class="card-body text-center">
+                        <img id="profile-pic" src="" class="profile-pic mb-3" alt="Foto de perfil">
+                        <h5 id="profile-name"></h5>
+                        <p class="text-muted" id="profile-depto"></p>
                     </div>
+                    <ul class="list-group list-group-flush">
+                       <li class="list-group-item d-flex justify-content-between align-items-start">
+                           <div class="ms-2 me-auto">
+                               <div class="fw-bold">RUT</div>
+                               <span id="profile-rut" class="text-muted"></span>
+                           </div>
+                       </li>
+                       <li class="list-group-item d-flex justify-content-between align-items-start">
+                           <div class="ms-2 me-auto">
+                               <div class="fw-bold">Email</div>
+                               <span id="profile-correo"></span>
+                           </div>
+                           <button class="btn btn-sm btn-outline-primary" id="email-copy-btn" title="Copiar email">
+                               <i class="bi bi-clipboard"></i>
+                           </button>
+                       </li>
+                       <li class="list-group-item d-flex justify-content-between align-items-start">
+                           <div class="ms-2 me-auto">
+                               <div class="fw-bold">Teléfono</div>
+                               <span id="profile-fono"></span>
+                           </div>
+                           <a class="btn btn-sm btn-outline-primary" id="phone-call-btn" title="Llamar">
+                               <i class="bi bi-telephone"></i>
+                           </a>
+                       </li>
+                    </ul>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-secondary" id="change-password-btn">
+                        <i class="bi bi-key me-2"></i>Cambiar Contraseña
+                    </button>
                 </div>
             </div>
         </div>
     </div>
     
     <!-- MODAL PARA CAMBIO DE CONTRASEÑA OBLIGATORIO -->
-    <div class="modal fade" id="changePasswordModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal fade" id="changePasswordModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true" aria-labelledby="changePasswordModalLabel">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Crea tu nueva contraseña</h5>
+                    <h5 class="modal-title" id="changePasswordModalLabel">Crea tu nueva contraseña</h5>
                 </div>
                 <div class="modal-body">
                     <p class="text-muted">Por seguridad, debes establecer una contraseña personalizada para acceder al portal.</p>
                     <form id="change-password-form">
                         <div class="form-floating mb-3">
-                            <input type="password" class="form-control" id="new-password" placeholder="Nueva Contraseña" required minlength="6">
+                            <input type="password" class="form-control" id="new-password" placeholder="Nueva Contraseña" required minlength="6" autocomplete="new-password">
                             <label for="new-password">Nueva Contraseña (mínimo 6 caracteres)</label>
                         </div>
-                        <div class="form-floating">
-                            <input type="password" class="form-control" id="confirm-password" placeholder="Confirmar Contraseña" required>
+                        <div class="form-floating mb-3">
+                            <input type="password" class="form-control" id="confirm-password" placeholder="Confirmar Contraseña" required autocomplete="new-password">
                             <label for="confirm-password">Confirmar Contraseña</label>
                         </div>
-                        <div id="password-match-error" class="text-danger small mt-2 d-none">Las contraseñas no coinciden.</div>
+                        <div class="form-text mb-3">
+                            <small>La contraseña debe tener al menos 6 caracteres. Recomendamos usar una combinación de letras, números y símbolos.</small>
+                        </div>
+                        <div id="password-match-error" class="alert alert-danger d-none" role="alert"></div>
                     </form>
-                     <div id="change-password-error" class="alert alert-danger mt-3 d-none"></div>
+                    <div id="change-password-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" id="save-new-password-btn">Guardar Contraseña</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="cancel-password-btn">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="save-new-password-btn">
+                        <span id="save-password-text">Guardar Contraseña</span>
+                        <span id="save-password-spinner" class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
+                        <span class="visually-hidden">Guardando...</span>
+                    </button>
                 </div>
             </div>
         </div>
     </div>
     
-    <!-- LOADER -->
+    <!-- MODAL PARA CAMBIO DE CONTRASEÑA VOLUNTARIO -->
+    <div class="modal fade" id="voluntaryChangePasswordModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true" aria-labelledby="voluntaryChangePasswordModalLabel">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="voluntaryChangePasswordModalLabel">Cambiar Contraseña</h5>
+                </div>
+                <div class="modal-body">
+                    <form id="voluntary-change-password-form">
+                        <div class="form-floating mb-3">
+                            <input type="password" class="form-control" id="current-password" placeholder="Contraseña Actual" required autocomplete="current-password">
+                            <label for="current-password">Contraseña Actual</label>
+                        </div>
+                        <div class="form-floating mb-3">
+                            <input type="password" class="form-control" id="new-voluntary-password" placeholder="Nueva Contraseña" required minlength="6" autocomplete="new-password">
+                            <label for="new-voluntary-password">Nueva Contraseña</label>
+                        </div>
+                        <div class="form-floating mb-3">
+                            <input type="password" class="form-control" id="confirm-voluntary-password" placeholder="Confirmar Contraseña" required autocomplete="new-password">
+                            <label for="confirm-voluntary-password">Confirmar Contraseña</label>
+                        </div>
+                        <div id="voluntary-password-match-error" class="alert alert-danger d-none" role="alert"></div>
+                    </form>
+                    <div id="voluntary-change-password-error" class="alert alert-danger mt-3 d-none" role="alert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="save-voluntary-password-btn">
+                        <span id="save-voluntary-password-text">Guardar Cambios</span>
+                        <span id="save-voluntary-password-spinner" class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
+                        <span class="visually-hidden">Guardando...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MODAL PARA DETALLE DE MENSAJE -->
+    <div class="modal fade" id="messageDetailModal" tabindex="-1" aria-hidden="true" aria-labelledby="messageDetailModalLabel">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="message-detail-title"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="message-detail-content"></div>
+                <div class="modal-footer">
+                    <small class="text-muted me-auto" id="message-detail-date"></small>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- LOADER GLOBAL -->
     <div id="loader" class="loader-container d-none">
-        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+        <p class="mt-3 text-muted" id="loader-message">Cargando...</p>
+    </div>
+    
+    <!-- TOAST PARA MENSAJES -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+        <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto" id="toast-title">Notificación</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toast-message"></div>
+        </div>
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        let changePasswordModal;
-        const placeholderSvg = "data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' fill='%23cccccc' class='bi bi-person-circle' viewBox='0 0 16 16'%3e%3cpath d='M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'/%3e%3cpath fill-rule='evenodd' d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z'/%3e%3c/svg%3e";
-
+        // Constantes y variables globales
+        const placeholderSvg = "data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='%23cccccc' d='M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'/%3e%3cpath fill='%23cccccc' fill-rule='evenodd' d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z'/%3e%3c/svg%3e";
+        let sessionToken = null;
+        let residentData = null;
+        let currentPage = {
+            encomiendas: 1,
+            visits: 1,
+            messages: 1
+        };
+        const itemsPerPage = 10;
+        
+        // Inicialización de componentes
+        const changePasswordModal = new bootstrap.Modal('#changePasswordModal');
+        const voluntaryChangePasswordModal = new bootstrap.Modal('#voluntaryChangePasswordModal');
+        const messageDetailModal = new bootstrap.Modal('#messageDetailModal');
+        const toast = new bootstrap.Toast('#liveToast');
+        
+        // Función para mostrar notificaciones
+        function showToast(title, message, type = 'info') {
+            const toastEl = document.getElementById('liveToast');
+            toastEl.classList.remove('text-bg-primary', 'text-bg-success', 'text-bg-danger', 'text-bg-warning');
+            
+            switch(type) {
+                case 'success':
+                    toastEl.classList.add('text-bg-success');
+                    break;
+                case 'error':
+                    toastEl.classList.add('text-bg-danger');
+                    break;
+                case 'warning':
+                    toastEl.classList.add('text-bg-warning');
+                    break;
+                default:
+                    toastEl.classList.add('text-bg-primary');
+            }
+            
+            document.getElementById('toast-title').textContent = title;
+            document.getElementById('toast-message').textContent = message;
+            toast.show();
+        }
+        
+        // Función para formatear RUT
         function formatRut(input) {
             let value = input.value.replace(/[.-]/g, '').toUpperCase();
             if (value.length > 1) {
@@ -164,103 +634,473 @@
             }
         }
         
-        function escapeJsString(str) {
+        // Función para escapar strings para HTML/JS
+        function escapeHtml(str) {
             if (!str) return "";
-            return str.toString().replace(/\\/g, '\\\\')
-                      .replace(/'/g, "\\'")
-                      .replace(/"/g, '\\"')
-                      .replace(/\n/g, '\\n')
-                      .replace(/\r/g, '\\r');
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
-
+        
+        // Función para mostrar/ocultar vistas
         function showView(viewId) {
-            ['login-view', 'main-content'].forEach(id => {
+            ['login-view', 'main-content', 'recovery-view', 'reset-password-view'].forEach(id => {
                 document.getElementById(id).style.display = (id === viewId) ? 'block' : 'none';
             });
         }
-        function showLoader(show) { document.getElementById('loader').classList.toggle('d-none', !show); }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
-            document.getElementById('login-rut').addEventListener('input', function() { formatRut(this); });
-
-            const packagesTab = document.getElementById('packages-tab');
-            packagesTab.addEventListener('click', function() {
-                const targetPane = document.getElementById('packages-tab-pane');
-                if (targetPane.getAttribute('data-loaded') === 'false') {
-                    const packagesList = document.getElementById('packages-list');
-                    packagesList.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
-                    
-                    google.script.run
-                        .withSuccessHandler(response => {
-                            if (response && response.success) {
-                                renderPackages(response.data);
-                                targetPane.setAttribute('data-loaded', 'true');
-                            } else {
-                                packagesList.innerHTML = `<div class="alert alert-danger">${(response && response.error) || 'Error al cargar'}</div>`;
-                            }
-                        })
-                        .withFailureHandler(err => {
-                             packagesList.innerHTML = `<div class="alert alert-danger">Error de conexión.</div>`;
-                        })
-                        .getMisEncomiendas_lazy(localStorage.getItem('sessionToken'));
-                }
-            });
-
-            const visitsTab = document.getElementById('visits-tab');
-            visitsTab.addEventListener('click', function() {
-                const targetPane = document.getElementById('visits-tab-pane');
-                if (targetPane.getAttribute('data-loaded') === 'false') {
-                    const visitsHistory = document.getElementById('visits-history');
-                    visitsHistory.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
-                    
-                     google.script.run
-                        .withSuccessHandler(response => {
-                            if (response && response.success) {
-                                renderVisits(response.data);
-                                targetPane.setAttribute('data-loaded', 'true');
-                            } else {
-                                visitsHistory.innerHTML = `<div class="alert alert-danger">${(response && response.error) || 'Error al cargar'}</div>`;
-                            }
-                        })
-                        .withFailureHandler(err => {
-                             visitsHistory.innerHTML = `<div class="alert alert-danger">Error de conexión.</div>`;
-                        })
-                        .getMiHistorialVisitas_lazy(localStorage.getItem('sessionToken'));
-                }
-            });
-
-            const token = localStorage.getItem('sessionToken');
-            if (token) {
-                showLoader(true);
+        
+        // Función para mostrar/ocultar loader
+        function showLoader(show, message = 'Cargando...') {
+            const loader = document.getElementById('loader');
+            const loaderMessage = document.getElementById('loader-message');
+            
+            loaderMessage.textContent = message;
+            loader.classList.toggle('d-none', !show);
+            
+            if (show) {
+                document.body.style.overflow = 'hidden';
+            } else {
+                document.body.style.overflow = '';
+            }
+        }
+        
+        // Función para manejar errores de conexión
+        function handleConnectionError(error) {
+            console.error("Error:", error);
+            showLoader(false);
+            showToast('Error', 'Error de conexión. Por favor, inténtalo de nuevo.', 'error');
+        }
+        
+        // Función para verificar la sesión al cargar la página
+        function checkSessionOnLoad() {
+            // Verificar si hay token de reset en la URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const resetToken = urlParams.get('resetToken');
+            
+            if (resetToken) {
+                showView('reset-password-view');
+                // Cargar logo en vista de reset
                 google.script.run
-                    .withSuccessHandler(handleLoginSuccess)
-                    .withFailureHandler(handleLoginFailure)
-                    .getResidentDataWithToken(token);
+                    .withSuccessHandler(logoUrl => {
+                        if (logoUrl) {
+                            const logoImg = document.getElementById('reset-logo');
+                            logoImg.src = logoUrl;
+                            logoImg.onerror = function() {
+                                this.style.display = 'none';
+                            };
+                        }
+                    })
+                    .withFailureHandler(console.error)
+                    .getLogoUrl();
+                return;
+            }
+            
+            // Cargar logo del condominio en vista de login
+            google.script.run
+                .withSuccessHandler(logoUrl => {
+                    if (logoUrl) {
+                        const loginLogo = document.getElementById('login-logo');
+                        const recoveryLogo = document.getElementById('recovery-logo');
+                        
+                        loginLogo.src = logoUrl;
+                        loginLogo.onerror = function() {
+                            this.style.display = 'none';
+                        };
+                        
+                        if (recoveryLogo) {
+                            recoveryLogo.src = logoUrl;
+                            recoveryLogo.onerror = function() {
+                                this.style.display = 'none';
+                            };
+                        }
+                    }
+                })
+                .withFailureHandler(console.error)
+                .getLogoUrl();
+            
+            sessionToken = localStorage.getItem('sessionToken');
+            if (sessionToken) {
+                showLoader(true, 'Verificando sesión...');
+                loadResidentData();
             } else {
                 showView('login-view');
             }
-        });
-
-        document.getElementById('login-form').addEventListener('submit', function(e) {
+        }
+        
+        // Función para cargar datos del residente
+        function loadResidentData() {
+            google.script.run
+                .withSuccessHandler(handleResidentDataResponse)
+                .withFailureHandler(handleResidentDataError)
+                .getResidentDataWithToken(sessionToken);
+        }
+        
+        // Función para manejar la respuesta de los datos del residente
+        function handleResidentDataResponse(response) {
+            if (!response || !response.success) {
+                localStorage.removeItem('sessionToken');
+                showView('login-view');
+                showLoader(false);
+                
+                if (response && response.error) {
+                    showToast('Sesión expirada', response.error, 'error');
+                }
+                return;
+            }
+            
+            residentData = response.data;
+            renderData(response.data);
+            showLoader(false);
+            showView('main-content');
+        }
+        
+        // Función para manejar errores al cargar datos del residente
+        function handleResidentDataError(error) {
+            localStorage.removeItem('sessionToken');
+            showView('login-view');
+            showLoader(false);
+            showToast('Error', 'No se pudieron cargar los datos. Por favor, inicia sesión nuevamente.', 'error');
+        }
+        
+        // Función para renderizar los datos en la interfaz
+        function renderData(data) {
+    if (!data) return;
+    
+    const { perfil, servicios, encomiendas, visitas, mensajes, config } = data;
+    
+    // Mostrar logo si está disponible (solo una vez)
+    const logoContainer = document.getElementById('logo-container');
+    if (config.LogoUrl && !logoContainer.querySelector('img')) {
+        logoContainer.innerHTML = `
+            <img src="${escapeHtml(config.LogoUrl)}" alt="Logo Condominio" class="header-logo">
+        `;
+        
+        // Manejar error de carga de imagen
+        const logoImg = logoContainer.querySelector('img');
+        logoImg.onerror = function() {
+            this.style.display = 'none';
+        };
+    }
+    
+    // Configuración general
+    document.getElementById('condo-name').textContent = escapeHtml(config.NombreCondominio || "Condominio");
+    document.getElementById('welcome-message').textContent = `¡Hola, ${escapeHtml(perfil.Nombre || 'Usuario')}!`;
+    
+    // Renderizar componentes
+    renderMessages(mensajes);
+    renderServices(servicios, config);
+    renderEncomiendas(encomiendas);
+    renderVisits(visitas);
+    renderMessagesList(mensajes);
+    renderProfile(perfil);
+}
+        
+        // Función para renderizar mensajes en la pestaña Inicio
+        function renderMessages(mensajes) {
+            const container = document.getElementById('messages-container');
+            
+            if (!mensajes || mensajes.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            let html = `
+                <div class="card mb-3">
+                    <div class="card-header fw-bold bg-warning-subtle">
+                        <i class="bi bi-megaphone-fill me-2"></i>Anuncios
+                    </div>
+                    <div class="list-group list-group-flush">
+            `;
+            
+            mensajes.slice(0, 3).forEach(m => {
+                const escapedTitle = escapeHtml(m.Titulo || 'Sin título');
+                const escapedMessage = escapeHtml(m.Mensaje || 'Sin contenido');
+                const fechaHora = `${m.Fecha || ''} ${m.Hora || ''}`.trim();
+                
+                html += `
+                    <a href="#" class="list-group-item list-group-item-action" onclick="showMessageDetailModal('${escapedTitle}', '${escapedMessage}', '${escapeHtml(fechaHora)}')">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${escapedTitle}</h6>
+                            <small class="text-muted">${escapeHtml(fechaHora)}</small>
+                        </div>
+                        <p class="mb-1 small text-truncate">${escapedMessage}</p>
+                    </a>
+                `;
+            });
+            
+            container.innerHTML = html + '</div></div>';
+        }
+        
+        // Función para renderizar la lista completa de mensajes
+        function renderMessagesList(mensajes) {
+            const container = document.getElementById('messages-list');
+            
+            if (!mensajes || mensajes.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info text-center">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        No tienes mensajes recibidos.
+                    </div>
+                `;
+                document.getElementById('messages-pagination').classList.add('d-none');
+                return;
+            }
+            
+            const startIndex = (currentPage.messages - 1) * itemsPerPage;
+            const paginatedMessages = mensajes.slice(startIndex, startIndex + itemsPerPage);
+            
+            container.innerHTML = paginatedMessages.map(m => {
+                const escapedTitle = escapeHtml(m.Titulo || 'Sin título');
+                const escapedMessage = escapeHtml(m.Mensaje || 'Sin contenido');
+                const fechaHora = `${m.Fecha || ''} ${m.Hora || ''}`.trim();
+                
+                return `
+                    <a href="#" class="list-group-item list-group-item-action" onclick="showMessageDetailModal('${escapedTitle}', '${escapedMessage}', '${escapeHtml(fechaHora)}')">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">${escapedTitle}</h6>
+                            <small class="text-muted">${escapeHtml(fechaHora)}</small>
+                        </div>
+                        <p class="mb-1 small text-truncate">${escapedMessage}</p>
+                    </a>
+                `;
+            }).join('');
+            
+            // Configurar paginación
+            setupPagination('messages', mensajes.length);
+        }
+        
+        // Función para configurar la paginación
+        function setupPagination(type, totalItems) {
+            const paginationContainer = document.getElementById(`${type}-pagination`);
+            const totalPages = Math.ceil(totalItems / itemsPerPage);
+            
+            if (totalPages <= 1) {
+                paginationContainer.classList.add('d-none');
+                return;
+            }
+            
+            paginationContainer.classList.remove('d-none');
+            let html = `
+                <ul class="pagination pagination-sm justify-content-center">
+                    <li class="page-item ${currentPage[type] === 1 ? 'disabled' : ''}">
+                        <a class="page-link" href="#" onclick="changePage('${type}', ${currentPage[type] - 1})" tabindex="-1" aria-disabled="${currentPage[type] === 1}">Anterior</a>
+                    </li>
+            `;
+            
+            for (let i = 1; i <= totalPages; i++) {
+                html += `
+                    <li class="page-item ${currentPage[type] === i ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="changePage('${type}', ${i})">${i}</a>
+                    </li>
+                `;
+            }
+            
+            html += `
+                <li class="page-item ${currentPage[type] === totalPages ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="changePage('${type}', ${currentPage[type] + 1})" aria-disabled="${currentPage[type] === totalPages}">Siguiente</a>
+                </li>
+            </ul>
+            `;
+            
+            paginationContainer.innerHTML = html;
+        }
+        
+        // Función para cambiar de página
+        function changePage(type, page) {
+            if (page < 1) return;
+            
+            const totalItems = {
+                encomiendas: residentData.encomiendas.length,
+                visits: residentData.visitas.length,
+                messages: residentData.mensajes.length
+            }[type];
+            
+            const totalPages = Math.ceil(totalItems / itemsPerPage);
+            if (page > totalPages) return;
+            
+            currentPage[type] = page;
+            loadResidentData();
+        }
+        
+        // Función para mostrar el modal con el detalle del mensaje
+        function showMessageDetailModal(title, message, date) {
+            document.getElementById('message-detail-title').textContent = title;
+            document.getElementById('message-detail-content').innerHTML = message.replace(/\n/g, '<br>');
+            document.getElementById('message-detail-date').textContent = date || '';
+            messageDetailModal.show();
+        }
+        
+        // Función para renderizar servicios
+        function renderServices(servicios, config) {
+            // Ascensores
+            const ascContainer = document.getElementById('ascensores-status');
+            
+            if (servicios.ascensores && servicios.ascensores.length > 0) {
+                ascContainer.innerHTML = servicios.ascensores.map(a => `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Ascensor ${escapeHtml(a.Número || '')} (${escapeHtml(a.Ubicación || '')})
+                        <span class="badge rounded-pill ${a.Estado && a.Estado.toLowerCase() === 'operativo' ? 'bg-success' : 'bg-danger'}">
+                            ${escapeHtml(a.Estado || '')}
+                        </span>
+                    </li>
+                `).join('');
+            } else {
+                ascContainer.innerHTML = '<li class="list-group-item text-muted">No hay información de ascensores</li>';
+            }
+            
+            // Estacionamientos
+            const estContainer = document.getElementById('estacionamientos-status');
+            const estDisponibles = servicios.estacionamientos.total - servicios.estacionamientos.ocupados;
+            
+            estContainer.innerHTML = `
+                <p class="card-text">
+                    Hay <strong>${estDisponibles}</strong> de <strong>${servicios.estacionamientos.total}</strong> 
+                    estacionamientos disponibles.
+                </p>
+            `;
+            
+            // Lavandería
+            const lavContainer = document.getElementById('lavanderia-status');
+            const lavDisponibles = (config.Lavadoras_Disponibles || 1) - servicios.lavadorasEnUso;
+            const secDisponibles = (config.Secadoras_Disponibles || 1) - servicios.secadorasEnUso;
+            
+            lavContainer.innerHTML = `
+                <p class="mb-1">Lavadoras disponibles: <strong>${lavDisponibles}</strong></p>
+                <p class="mb-0">Secadoras disponibles: <strong>${secDisponibles}</strong></p>
+            `;
+        }
+        
+        // Función para renderizar encomiendas
+        function renderEncomiendas(encomiendas) {
+            const container = document.getElementById('encomiendas-list');
+            
+            if (!encomiendas || encomiendas.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-success text-center">
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        No tienes encomiendas pendientes.
+                    </div>
+                `;
+                document.getElementById('encomiendas-pagination').classList.add('d-none');
+                return;
+            }
+            
+            const startIndex = (currentPage.encomiendas - 1) * itemsPerPage;
+            const paginatedEncomiendas = encomiendas.slice(startIndex, startIndex + itemsPerPage);
+            
+            container.innerHTML = `
+                <ul class="list-group">
+                    ${paginatedEncomiendas.map(e => `
+                        <li class="list-group-item">
+                            <p class="fw-bold mb-1">${escapeHtml(e.Descripción || 'Sin descripción')}</p>
+                            <small class="text-muted">
+                                Recibido el ${escapeHtml(e['Fecha Recepción'] || 'fecha desconocida')} 
+                                a las ${escapeHtml(e['Hora Recepción'] || 'hora desconocida')}
+                            </small>
+                        </li>
+                    `).join('')}
+                </ul>
+            `;
+            
+            // Configurar paginación
+            setupPagination('encomiendas', encomiendas.length);
+        }
+        
+        // Función para renderizar visitas
+        function renderVisits(visits) {
+            const container = document.getElementById('visits-history');
+            
+            if (!visits || visits.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info text-center">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        No tienes historial de visitas recientes.
+                    </div>
+                `;
+                document.getElementById('visits-pagination').classList.add('d-none');
+                return;
+            }
+            
+            const startIndex = (currentPage.visits - 1) * itemsPerPage;
+            const paginatedVisits = visits.slice(startIndex, startIndex + itemsPerPage);
+            
+            container.innerHTML = `
+                <div class="list-group">
+                    ${paginatedVisits.map(v => `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${escapeHtml(v['Nombre Visita'] || 'Visitante')}</h6>
+                                <small>${escapeHtml(v.Fecha || '')}</small>
+                            </div>
+                            <p class="mb-1">
+                                Ingreso: ${escapeHtml(v['Hora Ingreso'] || '')} - 
+                                Salida: ${escapeHtml(v['Hora Salida'] || 'Activa')}
+                            </p>
+                            <small class="text-muted">RUT: ${escapeHtml(v['Rut Visitante'] || '')}</small>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            // Configurar paginación
+            setupPagination('visits', visits.length);
+        }
+        
+        // Función para renderizar perfil
+        function renderProfile(perfil) {
+            const profilePic = document.getElementById('profile-pic');
+            
+            if (perfil.FotoUrl) {
+                profilePic.src = perfil.FotoUrl;
+            } else {
+                profilePic.src = placeholderSvg;
+            }
+            
+            profilePic.onerror = function() { this.src = placeholderSvg; };
+            
+            document.getElementById('profile-name').textContent = `${escapeHtml(perfil.Nombre || '')} ${escapeHtml(perfil.Apellidos || '')}`.trim();
+            document.getElementById('profile-depto').textContent = `Torre ${escapeHtml(perfil.Torre || '')} - Depto ${escapeHtml(perfil.Departamento || '')}`;
+            document.getElementById('profile-rut').textContent = escapeHtml(perfil.Rut || "No registrado");
+            document.getElementById('profile-correo').textContent = escapeHtml(perfil.Correo || "No registrado");
+            document.getElementById('profile-fono').textContent = escapeHtml(perfil.Fono || "No registrado");
+            
+            // Configurar botones de contacto
+            const phoneCallBtn = document.getElementById('phone-call-btn');
+            if (perfil.Fono) {
+                phoneCallBtn.href = `tel:${perfil.Fono}`;
+            } else {
+                phoneCallBtn.style.display = 'none';
+            }
+        }
+        
+        // Función para manejar el login
+        function handleLogin(e) {
             e.preventDefault();
+            
             const rut = document.getElementById('login-rut').value;
             const password = document.getElementById('login-password').value;
             const errorDiv = document.getElementById('login-error');
+            const loginBtn = document.getElementById('login-btn');
+            const loginBtnText = document.getElementById('login-btn-text');
+            const loginBtnSpinner = document.getElementById('login-btn-spinner');
+            
             errorDiv.classList.add('d-none');
-            showLoader(true);
-
+            loginBtn.disabled = true;
+            loginBtnText.textContent = 'Verificando...';
+            loginBtnSpinner.classList.remove('d-none');
+            
             google.script.run
                 .withSuccessHandler(response => {
-                    showLoader(false);
+                    loginBtn.disabled = false;
+                    loginBtnText.textContent = 'Ingresar';
+                    loginBtnSpinner.classList.add('d-none');
+                    
                     if (response && response.success) {
                         if (response.action === 'login') {
                             localStorage.setItem('sessionToken', response.token);
-                            showLoader(true);
-                            google.script.run
-                                .withSuccessHandler(handleLoginSuccess)
-                                .withFailureHandler(handleLoginFailure)
-                                .getResidentDataWithToken(response.token);
+                            sessionToken = response.token;
+                            showLoader(true, 'Cargando datos...');
+                            loadResidentData();
                         } else if (response.action === 'force_change') {
                             localStorage.setItem('tempToken', response.tempToken);
                             changePasswordModal.show();
@@ -271,53 +1111,60 @@
                     }
                 })
                 .withFailureHandler(err => {
+                    loginBtn.disabled = false;
+                    loginBtnText.textContent = 'Ingresar';
+                    loginBtnSpinner.classList.add('d-none');
+                    
                     errorDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
                     errorDiv.classList.remove('d-none');
-                    showLoader(false);
                 })
                 .loginUser(rut, password);
-        });
-        
-        function handleLoginFailure(error) {
-            localStorage.removeItem('sessionToken');
-            showView('login-view');
-            showLoader(false);
-            console.error("Login Failure Handler:", error);
-            alert("Ocurrió un error de conexión o del servidor. Por favor, intenta de nuevo.");
         }
-
-        document.getElementById('save-new-password-btn').addEventListener('click', function() {
+        
+        // Función para manejar el cambio de contraseña obligatorio
+        function handlePasswordChange() {
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-password').value;
             const errorMatchDiv = document.getElementById('password-match-error');
             const errorChangeDiv = document.getElementById('change-password-error');
+            const saveBtn = document.getElementById('save-new-password-btn');
+            const saveBtnText = document.getElementById('save-password-text');
+            const saveBtnSpinner = document.getElementById('save-password-spinner');
+            
             errorMatchDiv.classList.add('d-none');
             errorChangeDiv.classList.add('d-none');
-
+            
             if (!newPassword || newPassword.length < 6) {
                 errorChangeDiv.textContent = 'La contraseña debe tener al menos 6 caracteres.';
                 errorChangeDiv.classList.remove('d-none');
                 return;
             }
+            
             if (newPassword !== confirmPassword) {
+                errorMatchDiv.textContent = 'Las contraseñas no coinciden.';
                 errorMatchDiv.classList.remove('d-none');
                 return;
             }
             
             const tempToken = localStorage.getItem('tempToken');
             if (!tempToken) {
-                alert('Sesión expirada. Por favor, vuelve a iniciar sesión.');
-                location.reload();
+                showToast('Error', 'Sesión expirada. Por favor, vuelve a iniciar sesión.', 'error');
+                changePasswordModal.hide();
                 return;
             }
-
-            this.disabled = true;
-            this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+            
+            saveBtn.disabled = true;
+            saveBtnText.textContent = 'Guardando...';
+            saveBtnSpinner.classList.remove('d-none');
             
             google.script.run
                 .withSuccessHandler(res => {
+                    saveBtn.disabled = false;
+                    saveBtnText.textContent = 'Guardar Contraseña';
+                    saveBtnSpinner.classList.add('d-none');
+                    
                     if (res && res.success) {
-                        alert(res.message);
+                        showToast('Éxito', res.message, 'success');
                         localStorage.removeItem('tempToken');
                         changePasswordModal.hide();
                         document.getElementById('login-form').reset();
@@ -325,107 +1172,276 @@
                         errorChangeDiv.textContent = (res && res.error) || 'Error al guardar.';
                         errorChangeDiv.classList.remove('d-none');
                     }
-                    this.disabled = false;
-                    this.innerHTML = 'Guardar Contraseña';
                 })
                 .withFailureHandler(err => {
+                    saveBtn.disabled = false;
+                    saveBtnText.textContent = 'Guardar Contraseña';
+                    saveBtnSpinner.classList.add('d-none');
+                    
                     errorChangeDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
                     errorChangeDiv.classList.remove('d-none');
-                    this.disabled = false;
-                    this.innerHTML = 'Guardar Contraseña';
                 })
                 .setNewPassword(tempToken, newPassword);
-        });
-
-        function handleLoginSuccess(response) {
-            if (!response || !response.success) {
-                localStorage.removeItem('sessionToken');
-                showView('login-view');
-                showLoader(false);
-                alert((response && response.error) || "Tu sesión ha expirado o no se pudieron cargar los datos.");
+        }
+        
+        // Función para manejar el cambio de contraseña voluntario
+        function handleVoluntaryPasswordChange() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-voluntary-password').value;
+            const confirmPassword = document.getElementById('confirm-voluntary-password').value;
+            const errorMatchDiv = document.getElementById('voluntary-password-match-error');
+            const errorChangeDiv = document.getElementById('voluntary-change-password-error');
+            const saveBtn = document.getElementById('save-voluntary-password-btn');
+            const saveBtnText = document.getElementById('save-voluntary-password-text');
+            const saveBtnSpinner = document.getElementById('save-voluntary-password-spinner');
+            
+            errorMatchDiv.classList.add('d-none');
+            errorChangeDiv.classList.add('d-none');
+            
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                errorChangeDiv.textContent = 'Todos los campos son requeridos.';
+                errorChangeDiv.classList.remove('d-none');
                 return;
             }
             
-            renderInitialData(response.data); 
-            showLoader(false);
-            showView('main-content');
+            if (newPassword.length < 6) {
+                errorChangeDiv.textContent = 'La nueva contraseña debe tener al menos 6 caracteres.';
+                errorChangeDiv.classList.remove('d-none');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                errorMatchDiv.textContent = 'Las nuevas contraseñas no coinciden.';
+                errorMatchDiv.classList.remove('d-none');
+                return;
+            }
+            
+            saveBtn.disabled = true;
+            saveBtnText.textContent = 'Guardando...';
+            saveBtnSpinner.classList.remove('d-none');
+            
+            google.script.run
+                .withSuccessHandler(response => {
+                    saveBtn.disabled = false;
+                    saveBtnText.textContent = 'Guardar Cambios';
+                    saveBtnSpinner.classList.add('d-none');
+                    
+                    if (response && response.success) {
+                        showToast('Éxito', response.message, 'success');
+                        voluntaryChangePasswordModal.hide();
+                        document.getElementById('voluntary-change-password-form').reset();
+                    } else {
+                        errorChangeDiv.textContent = (response && response.error) || 'Error al cambiar la contraseña.';
+                        errorChangeDiv.classList.remove('d-none');
+                    }
+                })
+                .withFailureHandler(err => {
+                    saveBtn.disabled = false;
+                    saveBtnText.textContent = 'Guardar Cambios';
+                    saveBtnSpinner.classList.add('d-none');
+                    
+                    errorChangeDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
+                    errorChangeDiv.classList.remove('d-none');
+                })
+                .changePassword(residentData.perfil.rut, currentPassword, newPassword);
         }
         
-        function renderInitialData(data) {
-            const { perfil, servicios, mensajes, config } = data;
+        // Función para manejar la solicitud de recuperación de contraseña
+        function handlePasswordRecovery(e) {
+            e.preventDefault();
             
-            document.getElementById('condo-name').textContent = config.NombreCondominio || "Condominio";
-            document.getElementById('welcome-message').textContent = `¡Hola, ${perfil.Nombre}!`;
-            renderMessages(mensajes);
-            renderServices(servicios, config);
-            renderProfile(perfil);
-        }
-
-        function renderMessages(mensajes) {
-            const container = document.getElementById('messages-container');
-            if (!mensajes || mensajes.length === 0) {
-                container.innerHTML = ''; return;
-            }
-            let html = '<div class="card mb-3"><div class="card-header fw-bold bg-warning-subtle"><i class="bi bi-megaphone-fill me-2"></i>Anuncios</div><div class="list-group list-group-flush">';
-            mensajes.slice(0, 3).forEach(m => {
-                const escapedTitle = escapeJsString(m.Titulo);
-                const escapedMessage = escapeJsString(m.Mensaje);
-                html += `<a href="#" class="list-group-item list-group-item-action" onclick="alert('${escapedTitle}\\n\\n${escapedMessage}')">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${m.Titulo}</h6><small class="text-muted">${m.Fecha}</small>
-                            </div>
-                            <p class="mb-1 small text-truncate">${m.Mensaje}</p>
-                         </a>`;
-            });
-            container.innerHTML = html + '</div></div>';
-        }
-
-        function renderServices(servicios, config) {
-            const ascContainer = document.getElementById('ascensores-status');
-            ascContainer.innerHTML = servicios.ascensores.map(a => `<li class="list-group-item d-flex justify-content-between align-items-center">Ascensor ${a.Número} (${a.Ubicación}) <span class="badge ${a.Estado.toLowerCase() === 'operativo' ? 'badge-operativo' : 'badge-falla'}">${a.Estado}</span></li>`).join('') || '<li class="list-group-item text-muted">No hay datos.</li>';
+            const rut = document.getElementById('recovery-rut').value;
+            const email = document.getElementById('recovery-email').value;
+            const errorDiv = document.getElementById('recovery-error');
+            const successDiv = document.getElementById('recovery-success');
+            const recoveryBtn = document.getElementById('recovery-btn');
+            const recoveryBtnText = document.getElementById('recovery-btn-text');
+            const recoveryBtnSpinner = document.getElementById('recovery-btn-spinner');
             
-            const estContainer = document.getElementById('estacionamientos-status');
-            const estDisponibles = servicios.estacionamientos.total - servicios.estacionamientos.ocupados;
-            estContainer.innerHTML = `<p class="card-text">Hay <strong>${estDisponibles}</strong> de <strong>${servicios.estacionamientos.total}</strong> estacionamientos disponibles.</p>`;
-
-            const lavContainer = document.getElementById('lavanderia-status');
-            const lavDisponibles = (config['Lavadoras_Disponibles'] || 1) - servicios.lavadorasEnUso;
-            const secDisponibles = (config['Secadoras_Disponibles'] || 1) - servicios.secadorasEnUso;
-            lavContainer.innerHTML = `<p class="mb-1">Lavadoras disponibles: <strong>${lavDisponibles}</strong></p><p class="mb-0">Secadoras disponibles: <strong>${secDisponibles}</strong></p>`;
+            errorDiv.classList.add('d-none');
+            successDiv.classList.add('d-none');
+            recoveryBtn.disabled = true;
+            recoveryBtnText.textContent = 'Enviando...';
+            recoveryBtnSpinner.classList.remove('d-none');
+            
+            google.script.run
+                .withSuccessHandler(response => {
+                    recoveryBtn.disabled = false;
+                    recoveryBtnText.textContent = 'Enviar Enlace';
+                    recoveryBtnSpinner.classList.add('d-none');
+                    
+                    if (response && response.success) {
+                        successDiv.textContent = response.message;
+                        successDiv.classList.remove('d-none');
+                        document.getElementById('recovery-form').reset();
+                    } else {
+                        errorDiv.textContent = (response && response.error) || 'Error al enviar el enlace.';
+                        errorDiv.classList.remove('d-none');
+                    }
+                })
+                .withFailureHandler(err => {
+                    recoveryBtn.disabled = false;
+                    recoveryBtnText.textContent = 'Enviar Enlace';
+                    recoveryBtnSpinner.classList.add('d-none');
+                    
+                    errorDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
+                    errorDiv.classList.remove('d-none');
+                })
+                .requestPasswordReset(rut, email);
         }
-
-        function renderPackages(packages) {
-            const container = document.getElementById('packages-list');
-            if (!packages || packages.length === 0) {
-                container.innerHTML = '<div class="alert alert-success text-center"><i class="bi bi-check-circle-fill me-2"></i>No tienes encomiendas pendientes.</div>'; return;
+        
+        // Función para manejar el reseteo de contraseña con token
+        function handlePasswordReset(e) {
+            e.preventDefault();
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('resetToken');
+            const newPassword = document.getElementById('reset-new-password').value;
+            const confirmPassword = document.getElementById('reset-confirm-password').value;
+            const errorDiv = document.getElementById('reset-password-error');
+            const resetBtn = document.getElementById('reset-password-btn');
+            const resetBtnText = document.getElementById('reset-password-btn-text');
+            const resetBtnSpinner = document.getElementById('reset-password-btn-spinner');
+            
+            errorDiv.classList.add('d-none');
+            
+            if (!newPassword || newPassword.length < 6) {
+                errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+                errorDiv.classList.remove('d-none');
+                return;
             }
-            container.innerHTML = '<ul class="list-group">' + packages.map(p => `<li class="list-group-item"><p class="fw-bold mb-1">${p.Descripción}</p><small class="text-muted">Recibido el ${p['Fecha Recepción']} a las ${p['Hora Recepción']}</small></li>`).join('') + '</ul>';
-        }
-
-        function renderVisits(visits) {
-            const container = document.getElementById('visits-history');
-            if (!visits || visits.length === 0) {
-                container.innerHTML = '<div class="alert alert-info text-center"><i class="bi bi-info-circle-fill me-2"></i>No tienes historial de visitas recientes.</div>'; return;
+            
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = 'Las contraseñas no coinciden.';
+                errorDiv.classList.remove('d-none');
+                return;
             }
-            container.innerHTML = '<div class="list-group">' + visits.map(v => `<div class="list-group-item"><div class="d-flex w-100 justify-content-between"><h6 class="mb-1">${v['Nombre Visita']}</h6><small>${v.Fecha}</small></div><p class="mb-1">Ingreso: ${v['Hora Ingreso']} - Salida: ${v['Hora Salida'] || 'Activa'}</p><small class="text-muted">RUT: ${v['Rut Visitante']}</small></div>`).join('') + '</div>';
+            
+            resetBtn.disabled = true;
+            resetBtnText.textContent = 'Guardando...';
+            resetBtnSpinner.classList.remove('d-none');
+            
+            google.script.run
+                .withSuccessHandler(response => {
+                    resetBtn.disabled = false;
+                    resetBtnText.textContent = 'Guardar Contraseña';
+                    resetBtnSpinner.classList.add('d-none');
+                    
+                    if (response && response.success) {
+                        showToast('Éxito', response.message, 'success');
+                        // Limpiar URL
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        showView('login-view');
+                    } else {
+                        errorDiv.textContent = (response && response.error) || 'Error al guardar la contraseña.';
+                        errorDiv.classList.remove('d-none');
+                    }
+                })
+                .withFailureHandler(err => {
+                    resetBtn.disabled = false;
+                    resetBtnText.textContent = 'Guardar Contraseña';
+                    resetBtnSpinner.classList.add('d-none');
+                    
+                    errorDiv.textContent = 'Error de conexión. Inténtalo de nuevo.';
+                    errorDiv.classList.remove('d-none');
+                })
+                .resetPasswordWithToken(token, newPassword);
         }
-
-        function renderProfile(perfil) {
-            const profilePic = document.getElementById('profile-pic');
-            profilePic.src = perfil.Foto || placeholderSvg;
-            profilePic.onerror = function() { this.src = placeholderSvg; };
-            document.getElementById('profile-name').textContent = `${perfil.Nombre} ${perfil.Apellidos}`;
-            document.getElementById('profile-depto').textContent = `Torre ${perfil.Torre} - Depto ${perfil.Departamento}`;
-            document.getElementById('profile-rut').textContent = perfil.Rut;
-            document.getElementById('profile-correo').textContent = perfil.Correo || "No registrado";
-            document.getElementById('profile-fono').textContent = perfil.Fono || "No registrado";
-        }
-
-        document.getElementById('logout-btn').addEventListener('click', () => {
+        
+        // Función para manejar el logout
+        function handleLogout() {
             localStorage.removeItem('sessionToken');
             localStorage.removeItem('tempToken');
+            sessionToken = null;
+            residentData = null;
+            
             showView('login-view');
             document.getElementById('login-form').reset();
+            
+            showToast('Sesión cerrada', 'Has cerrado sesión correctamente.', 'success');
+        }
+        
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Formatear RUT automáticamente
+            document.getElementById('login-rut').addEventListener('input', function() {
+                formatRut(this);
+            });
+            document.getElementById('recovery-rut').addEventListener('input', function() {
+                formatRut(this);
+            });
+            
+            // Login form
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+            
+            // Recuperación de contraseña
+            document.getElementById('recovery-form').addEventListener('submit', handlePasswordRecovery);
+            document.getElementById('reset-password-form').addEventListener('submit', handlePasswordReset);
+            
+            // Cambio de contraseña obligatorio
+            document.getElementById('save-new-password-btn').addEventListener('click', handlePasswordChange);
+            document.getElementById('cancel-password-btn').addEventListener('click', function() {
+                localStorage.removeItem('tempToken');
+                changePasswordModal.hide();
+            });
+            
+            // Cambio de contraseña voluntario
+            document.getElementById('save-voluntary-password-btn').addEventListener('click', handleVoluntaryPasswordChange);
+            
+            // Navegación entre vistas
+            document.getElementById('forgot-password-link').addEventListener('click', function(e) {
+                e.preventDefault();
+                showView('recovery-view');
+            });
+            
+            document.getElementById('back-to-login-btn').addEventListener('click', function() {
+                showView('login-view');
+            });
+            
+            // Logout
+            document.getElementById('logout-btn').addEventListener('click', handleLogout);
+            
+            // Botón de actualización
+            document.getElementById('refresh-btn').addEventListener('click', function() {
+                showLoader(true, 'Actualizando datos...');
+                loadResidentData();
+            });
+            
+            // Botones de actualización por pestaña
+            document.getElementById('refresh-encomiendas-btn').addEventListener('click', function() {
+                showLoader(true, 'Actualizando encomiendas...');
+                loadResidentData();
+            });
+            
+            document.getElementById('refresh-visits-btn').addEventListener('click', function() {
+                showLoader(true, 'Actualizando visitas...');
+                loadResidentData();
+            });
+            
+            document.getElementById('refresh-messages-btn').addEventListener('click', function() {
+                showLoader(true, 'Actualizando mensajes...');
+                loadResidentData();
+            });
+            
+            // Botón para cambiar contraseña desde el perfil
+            document.getElementById('change-password-btn').addEventListener('click', function() {
+                voluntaryChangePasswordModal.show();
+            });
+            
+            // Botón para copiar email
+            document.getElementById('email-copy-btn').addEventListener('click', function() {
+                const email = document.getElementById('profile-correo').textContent;
+                if (email && email !== "No registrado") {
+                    navigator.clipboard.writeText(email).then(() => {
+                        showToast('Copiado', 'Email copiado al portapapeles.', 'success');
+                    }).catch(err => {
+                        console.error('Error al copiar:', err);
+                    });
+                }
+            });
+            
+            // Verificar sesión al cargar
+            checkSessionOnLoad();
         });
     </script>
 </body>
