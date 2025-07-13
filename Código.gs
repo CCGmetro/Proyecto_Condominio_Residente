@@ -1,791 +1,501 @@
-//==========================================================
-//    PORTAL DE RESIDENTES - BACKEND (v15 - Mejorado y Completo)
-// ==========================================================
+var SPREADSHEET_ID = '1lbioS5LjgsjJSSn_e8LUKusa0RGKXdDesfHrUG7-zJI';
+var DRIVE_FOLDER_ID = '1YinETeXv-G5XsH-1VuDtFD4Dl3YTcxqB';
 
-// IDs PRINCIPALES
-const SPREADSHEET_ID = '2lbioS5LjgsjJSSn_e8LUKusa0RGKXdDesfHrUG7-zJI';
-const FOTOS_FOLDER_ID = '2aYj5zToE3SrFN-X9oo_aDM0ij-F2HrI0';
-const LOGS_FOLDER_ID = '2eYoDgpzGdhLnN2nTUumMrf-s8jd_VAyE'; 
-
-// GIDs DE LAS HOJAS (con validación)
-const SHEETS = {
-  RESIDENTES: { gid: 1, name: 'Residentes' },
-  VISITAS: { gid: 1409883977, name: 'Visitas' },
-  DEPARTAMENTOS: { gid: 1067842709, name: 'Departamentos' },
-  CONFIGURACION: { gid: 34039156, name: 'Configuración' },
-  ESTACIONAMIENTOS: { gid: 227107706, name: 'Estacionamientos' },
-  ENCOMIENDAS: { gid: 1197993249, name: 'Encomiendas' },
-  LAVANDERIA: { gid: 260781605, name: 'Lavandería' },
-  ASCENSORES: { gid: 605301847, name: 'Ascensores' },
-  MENSAJES: { gid: 837880583, name: 'Mensajes' },
-  RECUPERACION: { gid: 1247789217, name: 'Recuperación' } 
+var SHEETS = {
+  RESIDENTES: { gid: 0 },
+  VISITAS: { gid: 1409883976 },
+  DEPARTAMENTOS: { gid: 1067842708 },
+  ESTACIONAMIENTOS: { gid: 227107705 },
+  ENCOMIENDAS: { gid: 1197993248 },
+  LAVANDERIA: { gid: 260781604 },
+  ASCENSORES: { gid: 605301846 },
+  MENSAJES: { gid: 837880582 }
 };
 
-// Cache de 30 minutos (1800 segundos)
-const CACHE_EXPIRATION = 1800;
-const TEMP_CACHE_EXPIRATION = 300;
-
-// --- SERVIDOR WEB ---
-function doGet() {
-  return HtmlService.createTemplateFromFile('Index').evaluate()
-    .setTitle("Portal de Residentes")
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-// --- OBTENER DATOS DE LA APLICACIÓN ---
-function getInitialData(token) {
+function doGet(e) {
   try {
-    if (!token) return { success: false, error: "Sesión inválida." };
-    const cache = CacheService.getScriptCache();
-    const rut = cache.get(token);
-    if (!rut) return { success: false, error: "Tu sesión ha expirado." };
-    cache.put(token, rut, CACHE_EXPIRATION);
-    return { success: true, data: _buildResidentResponse(rut) };
+    Logger.log('Iniciando doGet...');
+    var template = HtmlService.createTemplateFromFile('Index');
+    Logger.log('Plantilla Index cargada');
+    return template.evaluate()
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1, user-scalable=no')
+      .setTitle('Portal Residente')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   } catch (e) {
-    return { success: false, error: e.message };
+    Logger.log('Error en doGet: ' + e.message + ', Stack: ' + e.stack);
+    return HtmlService.createHtmlOutput('<p>Error al cargar la aplicación: ' + e.message + '</p>');
   }
 }
 
-
-// --- FUNCIONES LAZY LOADING (OPTIMIZADAS) ---
-function getLazyData(token, dataType, page, pageSize) {
+function include(filename) {
   try {
-    if (!token) return { success: false, error: "Sesión inválida." };
-    const cache = CacheService.getScriptCache();
-    const rut = cache.get(token);
-    if (!rut) return { success: false, error: "Sesión expirada." };
-
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const residente = _convertSheetToObjects(ss.getSheetByGid(SHEETS.RESIDENTES.gid))
-      .find(r => _normalizeRut(r.Rut) === _normalizeRut(rut));
-    if (!residente) throw new Error("Residente no encontrado.");
-
-    let data = [];
-
-    if (dataType === 'encomiendas') {
-      const sheet = ss.getSheetByGid(SHEETS.ENCOMIENDAS.gid);
-      data = _convertSheetToObjects(sheet).filter(e =>
-        e.Torre == residente.Torre &&
-        e.Departamento == residente.Departamento &&
-        String(e.Estado).toUpperCase() === 'PENDIENTE'
-      );
-    } else if (dataType === 'visitas') {
-      const sheet = ss.getSheetByGid(SHEETS.VISITAS.gid);
-      data = _convertSheetToObjects(sheet).filter(v =>
-        v.Torre == residente.Torre && v.Departamento == residente.Departamento
-      ).sort((a, b) => parseInt(b.ID || 0) - parseInt(a.ID || 0));
-    } else if (dataType === 'mensajes') {
-      const sheet = ss.getSheetByGid(SHEETS.MENSAJES.gid);
-      data = _convertSheetToObjects(sheet).filter(m => {
-        const dest = (m.Destinatario || '').toUpperCase();
-        return dest === 'TODOS' ||
-               dest === `T${residente.Torre}` ||
-               dest === `T${residente.Torre}-${residente.Departamento}` ||
-               dest === _normalizeRut(residente.Rut);
-      }).sort((a, b) => {
-        const dateA = new Date(`${a.Fecha || ''} ${a.Hora || ''}`);
-        const dateB = new Date(`${b.Fecha || ''} ${b.Hora || ''}`);
-        return dateB - dateA;
-      });
-    } else {
-      return { success: false, error: "Tipo inválido." };
-    }
-
-    const total = data.length;
-    const start = (page - 1) * pageSize;
-    const paged = data.slice(start, start + pageSize);
-
-    return { success: true, data: paged, total: total };
-
+    Logger.log('Incluyendo archivo: ' + filename);
+    var content = HtmlService.createHtmlOutputFromFile(filename).getContent();
+    Logger.log('Archivo ' + filename + ' incluido con éxito');
+    return content;
   } catch (e) {
-    return { success: false, error: e.message };
+    Logger.log('Error al incluir ' + filename + ': ' + e.message + ', Stack: ' + e.stack);
+    return '<!-- Error al incluir ' + filename + ': ' + e.message + ' -->';
   }
 }
 
-// --- LOGGING Y AUDITORÍA ---
-function logActivity(action, details = {}) {
+function getSheetByGid(gid) {
   try {
-    const logSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Logs') || 
-                     SpreadsheetApp.openById(SPREADSHEET_ID).insertSheet('Logs');
-    
-    // Si es la primera fila, agregar encabezados
-    if (logSheet.getLastRow() === 0) {
-      logSheet.appendRow(['Fecha', 'Hora', 'Acción', 'Detalles', 'Usuario']);
-    }
-    
-    const now = new Date();
-    const user = Session.getActiveUser().getEmail() || 'Anónimo';
-    
-    logSheet.appendRow([
-      Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
-      Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss'),
-      action,
-      JSON.stringify(details),
-      user
-    ]);
-    
-    // También guardar en archivo de texto en Drive
-    const logFolder = DriveApp.getFolderById(LOGS_FOLDER_ID);
-    const logFileName = `logs_${Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd')}.txt`;
-    let logFile;
-    
-    try {
-      logFile = logFolder.getFilesByName(logFileName).next();
-    } catch (e) {
-      logFile = logFolder.createFile(logFileName, '');
-    }
-    
-    logFile.setContent(logFile.getBlob().getDataAsString() + 
-      `[${Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss')}] ${action} - ${user}\n${JSON.stringify(details, null, 2)}\n\n`);
-    
-  } catch (e) {
-    console.error("Error al registrar actividad:", e);
-  }
-}
-
-function logError(context, error) {
-  logActivity(`ERROR: ${context}`, {
-    error: error.toString(),
-    stack: error.stack
-  });
-}
-
-// --- UTILIDADES MEJORADAS ---
-function _normalizeRut(rut) {
-  return rut ? rut.replace(/[.\-\s]/g, '').toUpperCase() : '';
-}
-
-function _validateRut(rut) {
-    if (!rut) return false;
-    const cleanRut = _normalizeRut(rut);
-    if (cleanRut.length < 2) return false;
-    
-    const rutDigits = cleanRut.slice(0, -1);
-    const dv = cleanRut.slice(-1);
-    
-    if (!/^[0-9]+$/.test(rutDigits)) return false;
-    
-    // Cálculo del DV esperado
-    let sum = 0;
-    let multiplier = 2;
-    
-    for (let i = rutDigits.length - 1; i >= 0; i--) {
-        sum += parseInt(rutDigits.charAt(i)) * multiplier;
-        multiplier = multiplier === 7 ? 2 : multiplier + 1;
-    }
-    
-    const expectedDv = 11 - (sum % 11);
-    const calculatedDv = expectedDv === 11 ? '0' : expectedDv === 10 ? 'K' : expectedDv.toString();
-    
-    return calculatedDv === dv.toUpperCase();
-}
-
-function _hashPassword(password, salt) {
-  if (!password || !salt) return '';
-  const saltedPassword = password + salt;
-  const hash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, saltedPassword, Utilities.Charset.UTF_8);
-  return hash.map(byte => ('0' + (byte & 0xFF).toString(16)).slice(-2)).join('');
-}
-
-function _generateTempPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-/**
- * Función optimizada para convertir hojas a objetos con caché
- */
-function _convertSheetToObjects(sheet) {
-  if (!sheet) return [];
-  const data = sheet.getDataRange().getValues();
-  const headers = data.shift();
-  return data.map(row => {
-    const obj = {};
-    headers.forEach((key, i) => obj[key] = row[i]);
-    return obj;
-  });
-}
-
-// --- MANEJO DE ARCHIVOS ---
-// --- FUNCIONES PARA OBTENER URL DE IMÁGENES ---
-function getLogoUrl() {
-  try {
-    const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
-    const file = folder.getFilesByName('LogoCDA.jpg');
-    return file.hasNext() ? "https://drive.google.com/uc?export=view&id=" + file.next().getId() : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function getResidentPhotoUrl(rut) {
-  try {
-    const folder = DriveApp.getFolderById(FOTOS_FOLDER_ID);
-    const files = folder.getFiles();
-    while (files.hasNext()) {
-      const file = files.next();
-      if (file.getName().split('.')[0] === rut) {
-        return "https://drive.google.com/uc?export=view&id=" + file.getId();
+    Logger.log('Buscando hoja con GID: ' + gid);
+    var spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheets = spreadsheet.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getSheetId() == gid) {
+        Logger.log('Hoja encontrada: ' + sheets[i].getName());
+        return sheets[i];
       }
     }
-    return null;
+    throw new Error('Hoja con GID ' + gid + ' no encontrada.');
   } catch (e) {
-    return null;
+    Logger.log('Error en getSheetByGid: ' + e.message + ', Stack: ' + e.stack);
+    throw e;
   }
 }
 
-// --- LÓGICA DE LOGIN MEJORADA ---
-function loginUser(rut, password) {
+function sheetToObjects(gid) {
   try {
-    if (!rut || !password) return { success: false, error: "RUT y contraseña son requeridos." };
-    
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByGid(SHEETS.RESIDENTES.gid);
-    const todosResidentes = _convertSheetToObjects(sheet);
-    
-    const normalizedRut = _normalizeRut(rut);
-    const residente = todosResidentes.find(r => _normalizeRut(r.Rut) === normalizedRut);
-    
-    if (!residente) {
-        Utilities.sleep(500);
-        return { success: false, error: 'RUT o contraseña incorrectos.' };
+    Logger.log('Convirtiendo hoja a objetos, GID: ' + gid);
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'sheet_' + gid;
+    var cachedData = cache.get(cacheKey);
+    if (cachedData) {
+      Logger.log('Datos obtenidos de caché para GID: ' + gid);
+      return JSON.parse(cachedData);
     }
-    
-    if (residente.PasswordHash && residente.PasswordSalt) {
-        if (_hashPassword(password, residente.PasswordSalt) === residente.PasswordHash) {
-            const token = Utilities.getUuid();
-            CacheService.getScriptCache().put(token, residente.Rut, CACHE_EXPIRATION);
-            return { success: true, action: 'login', token: token };
-        }
-    } else {
-        const rutDigits = normalizedRut.slice(0, -1);
-        if (password === rutDigits.substring(0, 6)) {
-            const tempToken = Utilities.getUuid();
-            CacheService.getScriptCache().put(`temp_${tempToken}`, residente.Rut, TEMP_CACHE_EXPIRATION);
-            return { success: true, action: 'force_change', tempToken: tempToken };
-        }
+
+    var sheet = getSheetByGid(gid);
+    if (!sheet) return [];
+    var data = sheet.getDataRange().getDisplayValues();
+    if (data.length < 1) {
+      Logger.log('No hay datos en la hoja para GID: ' + gid);
+      return [];
     }
-    
-    Utilities.sleep(500);
-    return { success: false, error: 'RUT o contraseña incorrectos.' };
+    var headers = data.shift();
+    if (!headers || headers.length === 0) {
+      Logger.log('No hay encabezados en la hoja para GID: ' + gid);
+      return [];
+    }
+    var objects = data.map(function(row) {
+      var obj = {};
+      headers.forEach(function(header, i) {
+        if (header) obj[header] = row[i] || '';
+      });
+      return obj;
+    });
+    cache.put(cacheKey, JSON.stringify(objects), 300);
+    Logger.log('Datos cacheados para GID: ' + gid);
+    return objects;
   } catch (e) {
-    console.error("Error en loginUser:", e);
-    return { success: false, error: 'Error en el servidor. Inténtalo más tarde.' };
+    Logger.log('Error en sheetToObjects: ' + e.message + ', Stack: ' + e.stack);
+    throw e;
   }
 }
 
-function setNewPassword(tempToken, newPassword) {
-    try {
-        if (!tempToken || !newPassword || newPassword.length < 6) {
-            return { success: false, error: 'La contraseña debe tener al menos 6 caracteres.' };
-        }
-        
-        const cache = CacheService.getScriptCache();
-        const rut = cache.get(`temp_${tempToken}`);
-        if (!rut) return { success: false, error: 'La sesión para cambiar la contraseña ha expirado.' };
-        
-        cache.remove(`temp_${tempToken}`);
-        const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByGid(SHEETS.RESIDENTES.gid);
-        if (!sheet) throw new Error("No se pudo acceder a la hoja de Residentes.");
-        
-        const data = sheet.getDataRange().getValues();
-        const headers = data.shift();
-        const rutIndex = headers.indexOf("Rut");
-        const hashIndex = headers.indexOf("PasswordHash");
-        const saltIndex = headers.indexOf("PasswordSalt");
-
-        if (hashIndex === -1 || saltIndex === -1) throw new Error("Columnas 'PasswordHash' o 'PasswordSalt' no encontradas.");
-        
-        const rowIndexInArray = data.findIndex(row => _normalizeRut(row[rutIndex]) === _normalizeRut(rut));
-        if (rowIndexInArray === -1) return { success: false, error: 'No se encontró tu registro.' };
-
-        const actualRowInSheet = rowIndexInArray + 2;
-        const salt = Utilities.getUuid();
-        const hash = _hashPassword(newPassword, salt);
-
-        sheet.getRange(actualRowInSheet, hashIndex + 1).setValue(hash);
-        sheet.getRange(actualRowInSheet, saltIndex + 1).setValue(salt);
-        
-        return { success: true, message: '¡Contraseña actualizada! Ahora puedes iniciar sesión.' };
-    } catch (e) {
-        console.error("Error en setNewPassword:", e);
-        return { success: false, error: 'Error al actualizar la contraseña.' };
+function login(rut, password) {
+  try {
+    Logger.log('Iniciando login para RUT: ' + rut);
+    if (!rut || !password) return { success: false, message: "Debe ingresar RUT y contraseña." };
+    var residentes = sheetToObjects(SHEETS.RESIDENTES.gid);
+    var residente = residentes.find(function(r) { return r.Rut === rut; });
+    if (!residente) {
+      Logger.log('RUT no encontrado: ' + rut);
+      return { success: false, message: 'RUT o contraseña incorrectos.' };
     }
+    var passwordGuardada = residente.Password || "";
+    if (passwordGuardada.trim() !== "") {
+      if (password === passwordGuardada) {
+        PropertiesService.getUserProperties().setProperty('LOGGED_IN_RUT', residente.Rut);
+        Logger.log('Login exitoso para RUT: ' + rut);
+        return { success: true, firstLogin: false, data: residente };
+      } else {
+        Logger.log('Contraseña incorrecta para RUT: ' + rut);
+        return { success: false, message: 'RUT o contraseña incorrectos.' };
+      }
+    } else {
+      var rutSinFormato = rut.replace(/\./g, '').replace(/-/g, '');
+      var passwordPorDefecto = rutSinFormato.substring(0, 6);
+      if (password === passwordPorDefecto) {
+        PropertiesService.getUserProperties().setProperty('tempUser', residente.Rut);
+        Logger.log('Primer login exitoso para RUT: ' + rut);
+        return { success: true, firstLogin: true };
+      } else {
+        Logger.log('Contraseña inicial incorrecta para RUT: ' + rut);
+        return { success: false, message: 'La contraseña inicial es incorrecta.' };
+      }
+    }
+  } catch (e) {
+    Logger.log('Error en login: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, message: 'Error en el servidor: ' + e.message };
+  }
 }
 
-// --- OBTENER DATOS DEL RESIDENTE (OPTIMIZADO CON CACHÉ) ---
-function getResidentDataWithToken(token) {
-    try {
-        if (!token) {
-            logActivity('Intento de acceso sin token', {token: token});
-            return { 
-                success: false, 
-                error: 'Sesión inválida. Por favor, inicia sesión nuevamente.' 
-            };
-        }
-        
-        const cache = CacheService.getScriptCache();
-        const rut = cache.get(token);
-        
-        if (!rut) {
-            logActivity('Intento de acceso con token expirado', {token: token});
-            return { 
-                success: false, 
-                error: 'Tu sesión ha expirado. Por favor, inicia sesión de nuevo.' 
-            };
-        }
-        
-        // Renovar el token
-        cache.put(token, rut, CACHE_EXPIRATION);
-        
-        // Intentar obtener datos del caché primero
-        const cacheKey = `resident_data_${rut}`;
-        const cachedData = cache.get(cacheKey);
-        
-        if (cachedData) {
-            return { 
-                success: true, 
-                data: JSON.parse(cachedData) 
-            };
-        }
-        
-        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-        
-        // Obtener datos del residente
-        const residentesSheet = ss.getSheetByName(SHEETS.RESIDENTES.name);
-        if (!residentesSheet) {
-            throw new Error("No se encontró la hoja de Residentes.");
-        }
-        
-        const todosResidentes = _convertSheetToObjects(residentesSheet);
-        const residenteActual = todosResidentes.find(r => _normalizeRut(r.Rut) === _normalizeRut(rut));
-        
-        if (!residenteActual) {
-            logActivity('Residente no encontrado al cargar datos', {rut: rut});
-            return { 
-                success: false, 
-                error: 'No se pudo encontrar tu perfil. Contacta al administrador.' 
-            };
-        }
-        
-        // Obtener foto del residente
-        const fotoUrl = getResidentPhotoUrl(rut);
-        if (fotoUrl) {
-            residenteActual.FotoUrl = fotoUrl;
-        }
-        
-        // Obtener configuración
-        const configSheet = ss.getSheetByName(SHEETS.CONFIGURACION.name);
-        const configData = _convertSheetToObjects(configSheet);
-        const config = {};
-        configData.forEach(row => { 
-            if (row.Clave) config[row.Clave] = row.Valor; 
-        });
-        
-        // Obtener logo del condominio
-        const logoUrl = getLogoUrl();
-        if (logoUrl) {
-            config.LogoUrl = logoUrl;
-        }
-        
-        // Obtener datos de servicios
-        const servicesData = {};
-        const sheetNames = [
-            'ASCENSORES', 'LAVANDERIA', 'ESTACIONAMIENTOS', 
-            'ENCOMIENDAS', 'VISITAS', 'MENSAJES'
-        ];
-        
-        sheetNames.forEach(sheetName => {
-            const sheet = ss.getSheetByName(SHEETS[sheetName].name);
-            servicesData[sheetName.toLowerCase()] = sheet ? _convertSheetToObjects(sheet) : [];
-        });
-        
-        // Procesar datos
-        const usosLavanderia = servicesData.lavanderia.filter(u => !u["Hora Termino"]);
-        
-        const servicios = {
-            ascensores: servicesData.ascensores,
-            lavadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Lavadora').length,
-            secadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Secadora').length,
-            estacionamientos: {
-                total: servicesData.estacionamientos.length,
-                ocupados: servicesData.estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length
-            }
-        };
-        
-        // Filtrar encomiendas y visitas por torre y departamento
-        const encomiendas = servicesData.encomiendas.filter(e => 
-            e.Torre == residenteActual.Torre && 
-            e.Departamento == residenteActual.Departamento && 
-            String(e.Estado).toUpperCase() === 'PENDIENTE'
-        );
-        
-        const visitas = servicesData.visitas
-            .filter(v => v.Torre == residenteActual.Torre && v.Departamento == residenteActual.Departamento)
-            .sort((a, b) => (b.ID || 0) - (a.ID || 0))
-            .slice(0, 20);
-            
-        // Filtrar mensajes por destinatario
-        const mensajes = servicesData.mensajes
-            .filter(m => {
-                if (!m.Destinatario) return false;
-                const dest = m.Destinatario.toUpperCase();
-                return dest === 'TODOS' || 
-                       dest === `T${residenteActual.Torre}` || 
-                       dest === `T${residenteActual.Torre}-${residenteActual.Departamento}` || 
-                       dest === _normalizeRut(residenteActual.Rut);
-            })
-            .sort((a, b) => {
-                const dateA = new Date(`${a.Fecha || '1970-01-01'} ${a.Hora || '00:00'}`);
-                const dateB = new Date(`${b.Fecha || '1970-01-01'} ${b.Hora || '00:00'}`);
-                return dateB - dateA;
-            });
-        
-        // Preparar respuesta
-        const responseData = _buildResidentResponse(rut);
-cache.put(cacheKey, JSON.stringify(responseData), 300);
-logActivity('Datos de residente cargados', {rut});
-return { success: true, data: responseData };
-        
-        // Almacenar en caché
-        cache.put(cacheKey, JSON.stringify(responseData), 300); // 5 minutos de caché
-        
-        logActivity('Datos de residente cargados', {rut: rut});
-        return { 
-            success: true, 
-            data: responseData 
-        };
-        
-    } catch (e) {
-        console.error("Error en getResidentDataWithToken:", e);
-        logError('Error en getResidentDataWithToken', e);
-        return { 
-            success: false, 
-            error: 'Error al cargar los datos. Por favor, inténtalo más tarde.' 
-        };
+function setNewPassword(newPassword, confirmPassword) {
+  try {
+    Logger.log('Estableciendo nueva contraseña');
+    var properties = PropertiesService.getUserProperties();
+    var rut = properties.getProperty('tempUser');
+    if (!rut) {
+      Logger.log('Sesión expirada, no hay tempUser');
+      return { success: false, message: "La sesión ha expirado. Vuelva a iniciar sesión." };
     }
+    if (!newPassword || newPassword.length < 6) {
+      Logger.log('Contraseña inválida: longitud < 6');
+      return { success: false, message: "La contraseña debe tener al menos 6 caracteres."};
+    }
+    if (newPassword !== confirmPassword) {
+      Logger.log('Contraseñas no coinciden');
+      return { success: false, message: "Las contraseñas no coinciden."};
+    }
+    var sheet = getSheetByGid(SHEETS.RESIDENTES.gid);
+    var allData = sheet.getDataRange().getValues();
+    var headers = allData.shift();
+    var rutIndex = headers.indexOf("Rut");
+    var passwordIndex = headers.indexOf("Password");
+    if (rutIndex === -1 || passwordIndex === -1) {
+      Logger.log('Faltan columnas Rut o Password');
+      throw new Error("Faltan columnas 'Rut' o 'Password'.");
+    }
+    for (var i = 0; i < allData.length; i++) {
+      if (allData[i][rutIndex] === rut) {
+        sheet.getRange(i + 2, passwordIndex + 1).setValue(newPassword);
+        CacheService.getScriptCache().remove('sheet_' + SHEETS.RESIDENTES.gid);
+        properties.deleteProperty('tempUser');
+        properties.setProperty('LOGGED_IN_RUT', rut);
+        var residenteData = sheetToObjects(SHEETS.RESIDENTES.gid).find(function(r) { return r.Rut === rut; });
+        Logger.log('Contraseña actualizada para RUT: ' + rut);
+        return { success: true, message: "Contraseña creada.", data: residenteData };
+      }
+    }
+    Logger.log('Registro no encontrado para RUT: ' + rut);
+    return { success: false, message: "No se encontró su registro." };
+  } catch (e) {
+    Logger.log('Error en setNewPassword: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, message: 'Error al guardar contraseña: ' + e.message };
+  }
 }
 
-// --- FUNCIÓN PARA CAMBIO DE CONTRASEÑA VOLUNTARIO ---
-function changePassword(rut, currentPassword, newPassword) {
-    try {
-        // Validaciones
-        if (!rut || !currentPassword || !newPassword || newPassword.length < 6) {
-            logActivity('Intento de cambio de contraseña con datos inválidos', {rut: rut, passLength: newPassword?.length});
-            return { 
-                success: false, 
-                error: 'Todos los campos son requeridos y la nueva contraseña debe tener al menos 6 caracteres.' 
-            };
-        }
-        
-        const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RESIDENTES.name);
-        if (!sheet) {
-            logError('Hoja de residentes no encontrada', new Error('Hoja no encontrada'));
-            return { 
-                success: false, 
-                error: 'Error al acceder a los datos.' 
-            };
-        }
-        
-        const residentes = _convertSheetToObjects(sheet);
-        const residente = residentes.find(r => _normalizeRut(r.Rut) === _normalizeRut(rut));
-        
-        if (!residente) {
-            logActivity('Residente no encontrado al cambiar contraseña', {rut: rut});
-            return { 
-                success: false, 
-                error: 'Residente no encontrado.' 
-            };
-        }
-        
-        // Verificar contraseña actual
-        const hashAttempt = _hashPassword(currentPassword, residente.PasswordSalt);
-        if (hashAttempt !== residente.PasswordHash) {
-            Utilities.sleep(500); // Prevenir timing attacks
-            logActivity('Intento de cambio de contraseña con credencial incorrecta', {rut: rut});
-            return { 
-                success: false, 
-                error: 'La contraseña actual es incorrecta.' 
-            };
-        }
-        
-        // Actualizar contraseña
-        const data = sheet.getDataRange().getValues();
-        const headers = data.shift();
-        const rutIndex = headers.indexOf("Rut");
-        const hashIndex = headers.indexOf("PasswordHash");
-        const saltIndex = headers.indexOf("PasswordSalt");
-        
-        const rowIndex = data.findIndex(row => _normalizeRut(row[rutIndex]) === _normalizeRut(rut));
-        if (rowIndex === -1) {
-            logActivity('Fila no encontrada al cambiar contraseña', {rut: rut});
-            return { 
-                success: false, 
-                error: 'No se pudo actualizar la contraseña.' 
-            };
-        }
-
-        const actualRow = rowIndex + 2;
-        const newSalt = Utilities.getUuid();
-        const newHash = _hashPassword(newPassword, newSalt);
-
-        sheet.getRange(actualRow, hashIndex + 1).setValue(newHash);
-        sheet.getRange(actualRow, saltIndex + 1).setValue(newSalt);
-        
-        // Limpiar caché
-        const cacheKey = `sheet_${sheet.getSheetId()}_${sheet.getLastRow()}_${sheet.getLastColumn()}`;
-        CacheService.getScriptCache().remove(cacheKey);
-        
-        logActivity('Contraseña cambiada exitosamente', {rut: rut, method: 'voluntary'});
-        return { 
-            success: true, 
-            message: 'Contraseña actualizada correctamente.' 
-        };
-    } catch (e) {
-        console.error("Error en changePassword:", e);
-        logError('Error en changePassword', e);
-        return { 
-            success: false, 
-            error: 'Error al cambiar la contraseña. Por favor, inténtalo de nuevo.' 
-        };
-    }
+function checkLogin() {
+  try {
+    Logger.log('Verificando estado de login');
+    var rut = PropertiesService.getUserProperties().getProperty('LOGGED_IN_RUT');
+    Logger.log('Estado de login: ' + (rut ? 'Logueado con RUT ' + rut : 'No logueado'));
+    return { isLoggedIn: !!rut };
+  } catch (e) {
+    Logger.log('Error en checkLogin: ' + e.message + ', Stack: ' + e.stack);
+    return { isLoggedIn: false, message: e.message };
+  }
 }
 
-// --- RECUPERACIÓN DE CONTRASEÑA ---
-function requestPasswordReset(rut, email) {
-    try {
-        if (!rut || !email) {
-            return { 
-                success: false, 
-                error: 'RUT y correo electrónico son requeridos.' 
-            };
-        }
-        
-        const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RESIDENTES.name);
-        if (!sheet) {
-            return { 
-                success: false, 
-                error: 'Error al acceder a los datos.' 
-            };
-        }
-        
-        const residentes = _convertSheetToObjects(sheet);
-        const residente = residentes.find(r => 
-            _normalizeRut(r.Rut) === _normalizeRut(rut) && 
-            r.Correo && r.Correo.toLowerCase() === email.toLowerCase()
-        );
-        
-        if (!residente) {
-            // Retraso para evitar timing attacks
-            Utilities.sleep(500);
-            return { 
-                success: false, 
-                error: 'No se encontró un residente con ese RUT y correo electrónico.' 
-            };
-        }
-        
-        // Generar token temporal
-        const token = Utilities.getUuid();
-        const expiration = new Date();
-        expiration.setHours(expiration.getHours() + 1); // Válido por 1 hora
-        
-        // Guardar en hoja de recuperación
-        const recoverySheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RECUPERACION.name) || 
-                             SpreadsheetApp.openById(SPREADSHEET_ID).insertSheet(SHEETS.RECUPERACION.name);
-        
-        if (recoverySheet.getLastRow() === 0) {
-            recoverySheet.appendRow(['Rut', 'Token', 'Expiración']);
-        }
-        
-        recoverySheet.appendRow([
-            _normalizeRut(rut),
-            token,
-            Utilities.formatDate(expiration, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss')
-        ]);
-        
-        // Enviar correo electrónico (simulado)
-        const resetLink = `https://script.google.com/macros/s/${ScriptApp.getScriptId()}/exec?resetToken=${token}`;
-        
-        // En producción, usar MailApp o GmailApp para enviar el correo real
-        console.log(`Enlace de recuperación para ${email}: ${resetLink}`);
-        
-        return { 
-            success: true, 
-            message: 'Se ha enviado un enlace de recuperación a tu correo electrónico.' 
-        };
-        
-    } catch (e) {
-        console.error("Error en requestPasswordReset:", e);
-        return { 
-            success: false, 
-            error: 'Error al procesar la solicitud. Por favor, inténtalo de nuevo.' 
-        };
-    }
+function logout() {
+  try {
+    Logger.log('Cerrando sesión');
+    PropertiesService.getUserProperties().deleteProperty('LOGGED_IN_RUT');
+    PropertiesService.getUserProperties().deleteProperty('tempUser');
+    Logger.log('Sesión cerrada exitosamente');
+    return { success: true };
+  } catch (e) {
+    Logger.log('Error en logout: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, message: 'Error al cerrar sesión: ' + e.message };
+  }
 }
 
-function resetPasswordWithToken(token, newPassword) {
-    try {
-        if (!token || !newPassword || newPassword.length < 6) {
-            return { 
-                success: false, 
-                error: 'Token inválido o contraseña demasiado corta.' 
-            };
-        }
-        
-        const recoverySheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RECUPERACION.name);
-        if (!recoverySheet || recoverySheet.getLastRow() < 2) {
-            return { 
-                success: false, 
-                error: 'Token no válido o expirado.' 
-            };
-        }
-        
-        const now = new Date();
-        const data = recoverySheet.getDataRange().getValues();
-        const headers = data.shift();
-        
-        const rutIndex = headers.indexOf('Rut');
-        const tokenIndex = headers.indexOf('Token');
-        const expirationIndex = headers.indexOf('Expiración');
-        
-        const row = data.find(row => row[tokenIndex] === token);
-        
-        if (!row) {
-            return { 
-                success: false, 
-                error: 'Token no válido o expirado.' 
-            };
-        }
-        
-        const expiration = new Date(row[expirationIndex]);
-        if (now > expiration) {
-            return { 
-                success: false, 
-                error: 'El token ha expirado. Por favor, solicita uno nuevo.' 
-            };
-        }
-        
-        const rut = row[rutIndex];
-        
-        // Actualizar contraseña
-        const residentesSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.RESIDENTES.name);
-        if (!residentesSheet) {
-            throw new Error("No se pudo acceder a la hoja de Residentes.");
-        }
-        
-        const residentesData = residentesSheet.getDataRange().getValues();
-        const residentesHeaders = residentesData.shift();
-        
-        const residenteRutIndex = residentesHeaders.indexOf("Rut");
-        const hashIndex = residentesHeaders.indexOf("PasswordHash");
-        const saltIndex = residentesHeaders.indexOf("PasswordSalt");
-
-        if (hashIndex === -1 || saltIndex === -1) {
-            throw new Error("Configuración incompleta en la hoja de Residentes.");
-        }
-        
-        const rowIndexInArray = residentesData.findIndex(r => _normalizeRut(r[residenteRutIndex]) === _normalizeRut(rut));
-        if (rowIndexInArray === -1) {
-            return { 
-                success: false, 
-                error: 'No se encontró el residente.' 
-            };
-        }
-
-        const actualRowInSheet = rowIndexInArray + 2;
-        const salt = Utilities.getUuid();
-        const hash = _hashPassword(newPassword, salt);
-
-        residentesSheet.getRange(actualRowInSheet, hashIndex + 1).setValue(hash);
-        residentesSheet.getRange(actualRowInSheet, saltIndex + 1).setValue(salt);
-        
-        // Eliminar token usado
-        const rowToDelete = data.indexOf(row) + 2; // +2 porque data ya no tiene headers y las filas empiezan en 1
-        recoverySheet.deleteRow(rowToDelete);
-        
-        // Limpiar caché
-        const cacheKey = `sheet_${residentesSheet.getSheetId()}_${residentesSheet.getLastRow()}_${residentesSheet.getLastColumn()}`;
-        CacheService.getScriptCache().remove(cacheKey);
-        
-        return { 
-            success: true, 
-            message: '¡Contraseña actualizada con éxito! Ahora puedes iniciar sesión con tu nueva contraseña.' 
-        };
-        
-    } catch (e) {
-        console.error("Error en resetPasswordWithToken:", e);
-        return { 
-            success: false, 
-            error: 'Error al actualizar la contraseña. Por favor, inténtalo nuevamente.' 
-        };
+function getResidentData() {
+  try {
+    Logger.log('Obteniendo datos del residente');
+    var rut = PropertiesService.getUserProperties().getProperty('LOGGED_IN_RUT');
+    if (!rut) {
+      Logger.log('No autenticado, sin LOGGED_IN_RUT');
+      return { success: false, error: 'No autenticado.' };
     }
-}
-function _buildResidentResponse(rut) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheets = ss.getSheets();
-  const findSheet = gid => sheets.find(s => s.getSheetId() == gid);
-
-  const residente = _convertSheetToObjects(findSheet(SHEETS.RESIDENTES.gid))
-    .find(r => _normalizeRut(r.Rut) === _normalizeRut(rut));
-  if (!residente) throw new Error("Residente no encontrado");
-
-  residente.FotoUrl = getResidentPhotoUrl(rut);
-
-  const configSheet = findSheet(SHEETS.CONFIGURACION.gid);
-  const config = {};
-  _convertSheetToObjects(configSheet).forEach(row => {
-    if (row.Clave) config[row.Clave] = row.Valor;
-  });
-  config.LogoUrl = getLogoUrl();
-
-  const usosLavanderia = _convertSheetToObjects(findSheet(SHEETS.LAVANDERIA.gid)).filter(u => !u["Hora Termino"]);
-  const estacionamientos = _convertSheetToObjects(findSheet(SHEETS.ESTACIONAMIENTOS.gid));
-
-  const servicios = {
-    ascensores: _convertSheetToObjects(findSheet(SHEETS.ASCENSORES.gid)),
-    lavadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Lavadora').length,
-    secadorasEnUso: usosLavanderia.filter(u => u.Equipo === 'Secadora').length,
-    estacionamientos: {
-      total: estacionamientos.length,
-      ocupados: estacionamientos.filter(e => String(e.Ocupado).toUpperCase() === 'SI').length
+    var residentes = sheetToObjects(SHEETS.RESIDENTES.gid);
+    var residente = residentes.find(function(r){return r.Rut === rut});
+    if (residente) {
+      var datosLimpios = {};
+      Object.keys(residente).forEach(function(key){ datosLimpios[key] = residente[key]; });
+      delete datosLimpios.Password;
+      Logger.log('Datos del residente obtenidos para RUT: ' + rut);
+      return { success: true, data: datosLimpios };
     }
-  };
-
-  const mensajes = _convertSheetToObjects(findSheet(SHEETS.MENSAJES.gid)).filter(m => {
-    const dest = (m.Destinatario || '').toUpperCase();
-    return dest === 'TODOS' ||
-           dest === `T${residente.Torre}` ||
-           dest === `T${residente.Torre}-${residente.Departamento}` ||
-           dest === _normalizeRut(residente.Rut);
-  });
-
-  return { perfil: residente, servicios, mensajes, config };
+    Logger.log('Residente no encontrado para RUT: ' + rut);
+    return { success: false, error: 'Residente no encontrado.' };
+  } catch (e) {
+    Logger.log('Error en getResidentData: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, error: 'Error al obtener datos del residente: ' + e.message };
+  }
 }
 
-function enviarNotificacionPush(token, titulo, cuerpo) {
-  const payload = {
-    to: token,
-    notification: {
-      title: titulo,
-      body: cuerpo
+function getResidentVisits() {
+  try {
+    Logger.log('Obteniendo visitas del residente');
+    var rut = PropertiesService.getUserProperties().getProperty('LOGGED_IN_RUT');
+    if (!rut) {
+      Logger.log('No autenticado, sin LOGGED_IN_RUT');
+      return { success: false, error: 'No autenticado.'};
     }
-  };
-
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    headers: {
-      Authorization: 'key=AIzaSyAVTtzogO4pF-K5de5sNRE7t6HkZujuoVk'
-    },
-    payload: JSON.stringify(payload)
-  };
-
-  const response = UrlFetchApp.fetch("https://fcm.googleapis.com/fcm/send", options);
-  Logger.log(response.getContentText());
+    var miResidente = sheetToObjects(SHEETS.RESIDENTES.gid).find(function(r){ return r.Rut === rut});
+    if (!miResidente) {
+      Logger.log('Residente no encontrado para RUT: ' + rut);
+      return { success: false, error: 'Residente no encontrado.'};
+    }
+    var todasLasVisitas = sheetToObjects(SHEETS.VISITAS.gid);
+    var misVisitas = todasLasVisitas.filter(function(v) {return v.Torre == miResidente.Torre && v.Departamento == miResidente.Departamento});
+    Logger.log('Visitas obtenidas: ' + misVisitas.length);
+    return { success: true, data: misVisitas.sort(function(a,b) {return b.ID - a.ID}), count: misVisitas.length };
+  } catch (e) {
+    Logger.log('Error en getResidentVisits: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, error: 'Error al obtener visitas: ' + e.message };
+  }
 }
 
+function getResidentPackages() {
+  try {
+    Logger.log('Obteniendo encomiendas del residente');
+    var rut = PropertiesService.getUserProperties().getProperty('LOGGED_IN_RUT');
+    if (!rut) {
+      Logger.log('No autenticado, sin LOGGED_IN_RUT');
+      return { success: false, error: 'No autenticado.'};
+    }
+    var miResidente = sheetToObjects(SHEETS.RESIDENTES.gid).find(function(r){ return r.Rut === rut});
+    if (!miResidente) {
+      Logger.log('Residente no encontrado para RUT: ' + rut);
+      return { success: false, error: 'Residente no encontrado.'};
+    }
+    var todasLasEncomiendas = sheetToObjects(SHEETS.ENCOMIENDAS.gid);
+    var misEncomiendas = todasLasEncomiendas.filter(function(e) { 
+      return e['RUT Residente'] === rut || 
+             (e.Torre === miResidente.Torre && e.Departamento === miResidente.Departamento) ||
+             e['Nombre Residente'] === (miResidente.Nombre + ' ' + miResidente.Apellidos);
+    });
+    var encomiendasPendientes = misEncomiendas.filter(function(e) { return String(e.Estado).toUpperCase() === 'PENDIENTE'; });
+    Logger.log('Encomiendas totales obtenidas: ' + misEncomiendas.length + ', Pendientes: ' + encomiendasPendientes.length);
+    return { 
+      success: true, 
+      data: misEncomiendas.sort(function(a,b) {return b.ID - a.ID}), 
+      count: encomiendasPendientes.length 
+    };
+  } catch (e) {
+    Logger.log('Error en getResidentPackages: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, error: 'Error al obtener encomiendas: ' + e.message };
+  }
+}
+
+function getMessages() {
+  try {
+    Logger.log('Obteniendo mensajes');
+    var rutLogueado = PropertiesService.getUserProperties().getProperty('LOGGED_IN_RUT');
+    if (!rutLogueado) {
+      Logger.log('No autenticado, sin LOGGED_IN_RUT');
+      return { success: false, error: "Usuario no autenticado." };
+    }
+    var todosResidentes = sheetToObjects(SHEETS.RESIDENTES.gid);
+    var infoResidente = todosResidentes.find(function(r) { return r.Rut === rutLogueado; });
+    if (!infoResidente) {
+      Logger.log('Residente no encontrado para RUT: ' + rutLogueado);
+      return { success: false, error: "No se pudo obtener información del residente."};
+    }
+    var miDepto = infoResidente.Torre + '-' + infoResidente.Departamento;
+    var todosLosAnuncios = sheetToObjects(SHEETS.MENSAJES.gid);
+    var anunciosRelevantes = todosLosAnuncios.filter(function(anuncio) { 
+      return anuncio.Destinatario === 'Todos' || anuncio.Destinatario === miDepto;
+    });
+    var anunciosNoLeidos = anunciosRelevantes.filter(function(anuncio) { 
+      return anuncio.Visto !== 'SÍ';
+    });
+    Logger.log('Mensajes totales obtenidos: ' + anunciosRelevantes.length + ', No leídos: ' + anunciosNoLeidos.length);
+    return { 
+      success: true, 
+      data: anunciosRelevantes.sort(function(a, b) { return b.ID - a.ID; }), 
+      count: anunciosNoLeidos.length 
+    };
+  } catch (e) {
+    Logger.log('Error en getMessages: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, error: 'Error al obtener mensajes: ' + e.message };
+  }
+}
+
+function markMessageAsRead(messageId) {
+  try {
+    Logger.log('Marcando mensaje como leído, ID: ' + messageId);
+    var sheet = getSheetByGid(SHEETS.MENSAJES.gid);
+    var allData = sheet.getDataRange().getValues();
+    var headers = allData.shift();
+    var idIndex = headers.indexOf('ID');
+    var vistoIndex = headers.indexOf('Visto');
+    if (idIndex === -1 || vistoIndex === -1) {
+      Logger.log('Faltan columnas ID o Visto en la hoja Mensajes');
+      throw new Error("Faltan columnas 'ID' o 'Visto' en la hoja Mensajes.");
+    }
+    for (var i = 0; i < allData.length; i++) {
+      if (allData[i][idIndex] == messageId) {
+        sheet.getRange(i + 2, vistoIndex + 1).setValue('SÍ');
+        CacheService.getScriptCache().remove('sheet_' + SHEETS.MENSAJES.gid);
+        Logger.log('Mensaje marcado como leído, ID: ' + messageId);
+        return { success: true };
+      }
+    }
+    Logger.log('Mensaje no encontrado, ID: ' + messageId);
+    return { success: false, message: 'Mensaje no encontrado.' };
+  } catch (e) {
+    Logger.log('Error en markMessageAsRead: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, message: 'Error al marcar mensaje como leído: ' + e.message };
+  }
+}
+
+function getPublicServicesStatus() {
+  try {
+    Logger.log('Obteniendo estado de servicios públicos');
+    var ascensores = sheetToObjects(SHEETS.ASCENSORES.gid);
+    var usosLavanderia = sheetToObjects(SHEETS.LAVANDERIA.gid);
+    var lavadorasEnUso = usosLavanderia.filter(function(u) {return u.Equipo === 'Lavadora' && !u["Hora Termino"]}).length;
+    var secadorasEnUso = usosLavanderia.filter(function(u) {return u.Equipo === 'Secadora' && !u["Hora Termino"]}).length;
+    var estacionamientos = sheetToObjects(SHEETS.ESTACIONAMIENTOS.gid);
+    var totalEstacionamientos = estacionamientos.length;
+    var estacionamientosOcupados = estacionamientos.filter(function(e){ return String(e.Ocupado).toUpperCase() === 'SI'}).length;
+    Logger.log('Servicios obtenidos: Ascensores=' + ascensores.length + ', Lavadoras=' + lavadorasEnUso + ', Secadoras=' + secadorasEnUso + ', Estacionamientos=' + totalEstacionamientos);
+    return {
+      success: true,
+      data: {
+        ascensores: ascensores,
+        lavanderia: { lavadoras: { enUso: lavadorasEnUso }, secadoras: { enUso: secadorasEnUso } },
+        estacionamientos: { total: totalEstacionamientos, ocupados: estacionamientosOcupados }
+      }
+    };
+  } catch (e) {
+    Logger.log('Error en getPublicServicesStatus: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, error: 'Error al obtener servicios: ' + e.message };
+  }
+}
+
+function updateResidentContactInfo(data) {
+  try {
+    Logger.log('Actualizando información de contacto');
+    var rut = PropertiesService.getUserProperties().getProperty('LOGGED_IN_RUT');
+    if (!rut) {
+      Logger.log('No autenticado, sin LOGGED_IN_RUT');
+      return { success: false, message: 'No autenticado.' };
+    }
+    var sheet = getSheetByGid(SHEETS.RESIDENTES.gid);
+    var allData = sheet.getDataRange().getValues();
+    var headers = allData.shift();
+    var rutIndex = headers.indexOf("Rut");
+    var fonoIndex = headers.indexOf("Fono");
+    var correoIndex = headers.indexOf("Correo");
+    if (rutIndex === -1 || fonoIndex === -1 || correoIndex === -1) {
+      Logger.log('Faltan columnas en la hoja Residentes');
+      throw new Error("Faltan columnas en la hoja Residentes.");
+    }
+    for (var i = 0; i < allData.length; i++) {
+      if (allData[i][rutIndex] === rut) {
+        sheet.getRange(i + 2, fonoIndex + 1).setValue(data.fono);
+        sheet.getRange(i + 2, correoIndex + 1).setValue(data.correo);
+        CacheService.getScriptCache().remove('sheet_' + SHEETS.RESIDENTES.gid);
+        SpreadsheetApp.flush();
+        Logger.log('Datos actualizados para RUT: ' + rut);
+        return { success: true, message: 'Datos actualizados.' };
+      }
+    }
+    Logger.log('Registro no encontrado para RUT: ' + rut);
+    return { success: false, message: 'No se encontró tu registro.' };
+  } catch (e) {
+    Logger.log('Error en updateResidentContactInfo: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, message: 'Error al actualizar: ' + e.message };
+  }
+}
+
+function uploadResidentePhoto(fileInfo, rut) {
+  try {
+    Logger.log('Subiendo foto para RUT: ' + rut);
+    if (!rut || !fileInfo || !fileInfo.base64) {
+      Logger.log('Faltan datos para subir la foto');
+      throw new Error("Faltan datos para subir la foto.");
+    }
+    var carpetaRaiz = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    var carpetaFotos = (function() {
+      var existe = carpetaRaiz.getFoldersByName("Fotos Residentes");
+      return existe.hasNext() ? existe.next() : carpetaRaiz.createFolder("Fotos Residentes");
+    })();
+    var archivos = carpetaFotos.getFiles();
+    while (archivos.hasNext()) {
+      var archivo = archivos.next();
+      if (archivo.getName().startsWith(rut + '.')) archivo.setTrashed(true);
+    }
+    var extension = fileInfo.fileName.split('.').pop() || 'jpg';
+    var nombreArchivo = rut + '.' + extension;
+    var blob = Utilities.newBlob(Utilities.base64Decode(fileInfo.base64.split(',')[1]), fileInfo.mimeType, nombreArchivo);
+    var nuevoArchivo = carpetaFotos.createFile(blob);
+    nuevoArchivo.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    var fotoUrl = 'https://drive.google.com/thumbnail?id=' + nuevoArchivo.getId() + '&sz=w300&t=' + Date.now();
+    var sheet = getSheetByGid(SHEETS.RESIDENTES.gid);
+    var data = sheet.getDataRange().getValues();
+    var headers = data.shift();
+    var rutIndex = headers.indexOf("Rut");
+    var fotoIndex = headers.indexOf("Foto") + 1;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i][rutIndex] === rut) {
+        sheet.getRange(i + 2, fotoIndex).setValue(fotoUrl);
+        CacheService.getScriptCache().remove('sheet_' + SHEETS.RESIDENTES.gid);
+        Logger.log('Foto subida y URL actualizada: ' + fotoUrl);
+        break;
+      }
+    }
+    return { success: true, newUrl: fotoUrl };
+  } catch (e) {
+    Logger.log('Error en uploadResidentePhoto: ' + e.message + ', Stack: ' + e.stack);
+    return { success: false, message: 'Error al subir foto: ' + e.message };
+  }
+}
+
+// Code.gs
+function getResidentReservations() {
+  try {
+    // Ejemplo: Consulta a una hoja de Google Sheets
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Reservas');
+    var data = sheet.getDataRange().getValues();
+    var reservations = data.slice(1).map(function(row) {
+      return {
+        ID: row[0],
+        'Espacio Común': row[1],
+        'Fecha Reserva': row[2],
+        'Hora Reserva': row[3],
+        Estado: row[4],
+        Comentarios: row[5] || ''
+      };
+    });
+    var count = reservations.filter(function(r) {
+      return ['PENDIENTE', 'CONFIRMADA'].indexOf(String(r.Estado).toUpperCase()) !== -1;
+    }).length;
+    return { success: true, data: reservations, count: count };
+  } catch (e) {
+    Logger.log('Error en getResidentReservations: ' + e);
+    return { success: false, message: 'Error al obtener las reservas: ' + e.message };
+  }
+}
+
+function createReservation(reservationData) {
+  try {
+    if (!reservationData.space || !reservationData.date || !reservationData.time) {
+      return { success: false, message: 'Faltan datos obligatorios para la reserva.' };
+    }
+    // Ejemplo: Guardar en una hoja de Google Sheets
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Reservas');
+    var id = sheet.getLastRow(); // Simple ID increment
+    sheet.appendRow([
+      id,
+      reservationData.space,
+      reservationData.date,
+      reservationData.time,
+      'PENDIENTE',
+      reservationData.comments || '',
+      reservationData.residentRut
+    ]);
+    return { success: true, message: 'Reserva creada exitosamente.' };
+  } catch (e) {
+    Logger.log('Error en createReservation: ' + e);
+    return { success: false, message: 'Error al crear la reserva: ' + e.message };
+  }
+}

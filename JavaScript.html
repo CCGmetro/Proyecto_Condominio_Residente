@@ -1,0 +1,833 @@
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM cargado, iniciando aplicación...');
+    
+    // Función para esperar a que Bootstrap esté cargado
+    function waitForBootstrap(callback, maxAttempts = 10, interval = 500) {
+        let attempts = 0;
+        function checkBootstrap() {
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                console.log('Bootstrap cargado correctamente');
+                callback();
+            } else if (attempts < maxAttempts) {
+                attempts++;
+                console.log('Esperando Bootstrap, intento ' + attempts);
+                setTimeout(checkBootstrap, interval);
+            } else {
+                console.error('No se pudo cargar Bootstrap después de varios intentos');
+                document.getElementById('loading-view').classList.remove('active');
+                document.getElementById('login-view').classList.add('active');
+                document.getElementById('loading-message').textContent = 'Error al cargar la aplicación';
+                alert('Error: No se pudo cargar la biblioteca de Bootstrap. Por favor, recarga la página.');
+            }
+        }
+        checkBootstrap();
+    }
+
+    // Variables globales
+    let myProfileData = {};
+    let alertModal = null;
+    let passwordChangeModal = null;
+    let messageDetailModal = null;
+    let originalVisitsData = [];
+    let originalPackagesData = [];
+    let originalMessagesData = [];
+    let originalReservationsData = [];
+    let isReservationsSupported = typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getResidentReservations === 'function';
+
+    // Utility Functions
+    function createEmptyState(message) {
+        return '<div class="text-center text-muted p-5"><i class="bi bi-info-circle" style="font-size: 3rem;"></i><p class="mt-2">' + message + '</p></div>';
+    }
+
+    function showAlert(title, body) {
+        console.log('Mostrando alerta:', title, body);
+        if (!alertModal) {
+            console.error('Modal no disponible:', title, body);
+            alert('Error: Modal no disponible. ' + title + ': ' + body);
+            return;
+        }
+        var modalTitle = document.getElementById('alertModalTitle');
+        var modalBody = document.getElementById('alertModalBody');
+        if (modalTitle) modalTitle.textContent = title;
+        if (modalBody) modalBody.textContent = body;
+        alertModal.show();
+    }
+
+    function showButtonLoading(button, isLoading, loadingText) {
+        if (!button) return;
+        var originalHtml = button.dataset.originalHtml || button.innerHTML;
+        if (!button.dataset.originalHtml) button.dataset.originalHtml = originalHtml;
+        button.disabled = isLoading;
+        button.innerHTML = isLoading ? '<span class="spinner-border spinner-border-sm" role="status"></span> ' + loadingText + '...' : originalHtml;
+    }
+
+    function mostrarAlertaInterna(containerId, message, type = 'danger') {
+        console.log('Mostrando alerta interna:', containerId, message, type);
+        var container = document.getElementById(containerId);
+        if (container) container.innerHTML = '<div class="alert alert-' + type + ' alert-dismissible fade show mt-3" role="alert">' + message + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+    }
+
+    function formatoRutLive(event) {
+        var input = event.target;
+        if (!input) return;
+        var valor = input.value.replace(/[^0-9kK]/g, "").toUpperCase();
+        if (valor.length > 1) {
+            var cuerpo = valor.slice(0, -1);
+            var dv = valor.slice(-1);
+            input.value = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + '-' + dv;
+        } else {
+            input.value = valor;
+        }
+    }
+
+    function validarRut(rut) {
+        if (!rut) return false;
+        rut = rut.replace(/\./g, "").replace("-", "").toUpperCase();
+        if (!/^\d{7,8}[0-9K]$/.test(rut)) return false;
+        var cuerpo = rut.slice(0, -1);
+        var dv = rut.slice(-1);
+        var suma = 0, multiplo = 2;
+        for (var i = cuerpo.length - 1; i >= 0; i--) {
+            suma += parseInt(cuerpo[i], 10) * multiplo;
+            multiplo = multiplo === 7 ? 2 : multiplo + 1;
+        }
+        var dvEsperado = 11 - (suma % 11);
+        dvEsperado = dvEsperado === 11 ? "0" : dvEsperado === 10 ? "K" : dvEsperado.toString();
+        return dv === dvEsperado;
+    }
+
+    function handleLoadError(error, viewId) {
+        console.error('Error al cargar datos para ' + viewId + ':', error);
+        var container = document.getElementById(viewId);
+        if (container) container.innerHTML = createEmptyState('Error al cargar los datos. Por favor, intenta de nuevo.');
+    }
+
+    // Navigation and Views
+    function mostrarVista(vistaId) {
+        console.log('Cambiando a vista:', vistaId);
+        var vistaActiva = document.getElementById(vistaId);
+        if (!vistaActiva) {
+            console.error('No se encontró la vista con ID:', vistaId);
+            showAlert('Error', 'No se pudo cargar la vista principal.');
+            return;
+        }
+        document.querySelectorAll('.view').forEach(function(v) {
+            if (v.classList.contains('active')) {
+                v.classList.remove('active');
+                setTimeout(() => v.style.display = 'none', 300);
+            }
+        });
+        vistaActiva.style.display = 'block';
+        setTimeout(() => vistaActiva.classList.add('active'), 10);
+        var loadingView = document.getElementById('loading-view');
+        if (loadingView) {
+            loadingView.classList.remove('active');
+            setTimeout(() => loadingView.style.display = 'none', 300);
+        }
+    }
+
+    function setupNavigation() {
+        console.log('Configurando navegación');
+        var navLinks = document.querySelectorAll('.nav-link');
+        navLinks.forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                var viewId = this.dataset.view;
+                var title = this.dataset.title;
+                navLinks.forEach(function(l) { l.classList.remove('active'); });
+                this.classList.add('active');
+                document.querySelectorAll('.view-content').forEach(function(v) { v.classList.remove('active'); });
+                var viewContainer = document.getElementById('view-' + viewId);
+                viewContainer.classList.add('active');
+                document.getElementById('header-title').textContent = title;
+                window.scrollTo(0, 0);
+                // Re-renderizar la vista para restablecer el buscador
+                if (viewId === 'visitas') renderVisits({ success: true, data: originalVisitsData, count: originalVisitsData.length });
+                else if (viewId === 'encomiendas') renderPackages({ success: true, data: originalPackagesData, count: originalPackagesData.filter(p => String(p.Estado).toUpperCase() === 'PENDIENTE').length });
+                else if (viewId === 'mensajes') renderMessages({ success: true, data: originalMessagesData, count: originalMessagesData.filter(m => m.Visto !== 'SÍ').length });
+                else if (viewId === 'reservas') {
+                    if (isReservationsSupported) {
+                        renderReservations({ success: true, data: originalReservationsData, count: originalReservationsData.filter(r => ['PENDIENTE', 'CONFIRMADA'].includes(String(r.Estado).toUpperCase())).length });
+                    } else {
+                        renderReservations({ success: false, message: 'La funcionalidad de reservas no está disponible en este momento.' });
+                    }
+                }
+            });
+        });
+    }
+
+    function renderHomePage(response) {
+        console.log('Renderizando página de inicio:', response);
+        var homeContainer = document.getElementById('view-inicio');
+        if (!homeContainer) return;
+        homeContainer.classList.remove('loading');
+        if (!response.success) {
+            homeContainer.innerHTML = createEmptyState('No se pudieron cargar los servicios.');
+            return;
+        }
+        var d = response.data;
+        var ascensorHtml = d.ascensores.map(function(a) {
+            return '<li class="list-group-item d-flex justify-content-between align-items-center">' + 
+                   'Ascensor ' + a.Número + 
+                   '<span class="badge bg-' + (String(a.Estado).toLowerCase().includes('operativo') ? 'success' : 'danger') + ' rounded-pill">' + a.Estado + '</span>' +
+                   '</li>';
+        }).join('');
+        homeContainer.innerHTML = '<div class="card mb-3 shadow-sm"><div class="card-header fw-bold"><i class="bi bi-building-fill-gear me-2"></i>Servicios Generales</div><ul class="list-group list-group-flush">' +
+                                 '<li class="list-group-item d-flex justify-content-between align-items-center">Est. Visitas<span class="badge bg-primary rounded-pill">' + d.estacionamientos.ocupados + ' / ' + d.estacionamientos.total + ' Ocupados</span></li>' +
+                                 '<li class="list-group-item d-flex justify-content-between align-items-center">Lavadoras en uso<span class="badge bg-info rounded-pill">' + d.lavanderia.lavadoras.enUso + '</span></li>' +
+                                 '<li class="list-group-item d-flex justify-content-between align-items-center">Secadoras en uso<span class="badge bg-warning rounded-pill">' + d.lavanderia.secadoras.enUso + '</span></li></ul></div>' +
+                                 '<div class="card shadow-sm"><div class="card-header fw-bold"><i class="bi bi-arrow-down-up me-2"></i>Estado de Ascensores</div><ul class="list-group list-group-flush">' + ascensorHtml + '</ul></div>';
+    }
+
+    function renderProfile(response) {
+        console.log('Renderizando perfil:', response);
+        var profileContainer = document.getElementById('view-perfil');
+        if (!profileContainer) return;
+        profileContainer.classList.remove('loading');
+        if (!response.success) {
+            profileContainer.innerHTML = createEmptyState('No se pudo cargar el perfil.');
+            return;
+        }
+        myProfileData = response.data;
+        var placeholderImg = 'data:image/svg+xml;charset=UTF-8,%3csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" fill="%23cccccc" class="bi bi-person-circle" viewBox="0 0 16 16"%3e%3cpath d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/%3e%3cpath fill-rule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z"/%3e%3c/svg%3e';
+        profileContainer.innerHTML = '<div class="text-center"><img src="' + (myProfileData.Foto || placeholderImg) + '" class="profile-pic mb-2" alt="Foto de perfil" id="profile-image-display" onerror="this.src=\'' + placeholderImg + '\'"><h4 class="mb-0">' + myProfileData.Nombre + ' ' + myProfileData.Apellidos + '</h4><p class="text-muted">Torre ' + myProfileData.Torre + ' - Depto ' + myProfileData.Departamento + '</p></div>' +
+                                    '<form id="profileForm" class="mt-4"><div class="mb-3"><label class="form-label">RUT</label><input type="text" class="form-control" value="' + myProfileData.Rut + '" readonly></div>' +
+                                    '<div class="mb-3"><label for="profile-fono" class="form-label">Teléfono</label><input type="tel" class="form-control" id="profile-fono" value="' + (myProfileData.Fono || '') + '"></div>' +
+                                    '<div class="mb-3"><label for="profile-correo" class="form-label">Correo Electrónico</label><input type="email" class="form-control" id="profile-correo" value="' + (myProfileData.Correo || '') + '"></div>' +
+                                    '<div class="mb-3"><label for="profile-foto" class="form-label">Cambiar Foto</label><input class="form-control" type="file" id="profile-foto" accept="image/jpeg,image/png"></div>' +
+                                    '<div class="d-grid gap-2"><button type="submit" class="btn btn-success" id="saveProfileBtn"><i class="bi bi-save-fill me-2"></i>Guardar Cambios</button>' +
+                                    '<button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="passwordChangeModal">Cambiar Contraseña</button>' +
+                                    '<button type="button" class="btn btn-outline-danger" id="logoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión</button></div></form>';
+        document.getElementById('profileForm').addEventListener('submit', handleProfileUpdate);
+        document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+        document.getElementById('profile-image-display').addEventListener('click', function() { document.getElementById('profile-foto').click(); });
+        document.getElementById('profile-foto').addEventListener('change', handleFotoUpload);
+    }
+
+    function renderVisits(response) {
+        console.log('Renderizando visitas:', response);
+        var visitsContainer = document.getElementById('view-visitas');
+        if (!visitsContainer) return;
+        visitsContainer.classList.remove('loading');
+        if (!response.success) {
+            visitsContainer.innerHTML = createEmptyState('No se pudo cargar el historial de visitas.');
+            return;
+        }
+        originalVisitsData = response.data;
+        var visits = response.data;
+        if (visits.length === 0) {
+            visitsContainer.innerHTML = createEmptyState('No tienes un historial de visitas.');
+            return;
+        }
+        var searchHtml = '<div class="search-container mb-3"><input type="text" class="form-control" id="visitas-search" placeholder="Buscar por nombre, RUT o fecha..."></div>';
+        visitsContainer.innerHTML = searchHtml + '<div id="visitas-list"></div>';
+        function updateVisitsList(data) {
+            var listContainer = document.getElementById('visitas-list');
+            if (data.length === 0) {
+                listContainer.innerHTML = createEmptyState('No se encontraron visitas.');
+                return;
+            }
+            listContainer.innerHTML = data.map(function(v) {
+                return '<div class="card mb-2 shadow-sm"><div class="card-body py-2 px-3"><div class="d-flex justify-content-between"><h6 class="card-title mb-1">' + v['Nombre Visita'] + '</h6><span class="badge bg-secondary-subtle text-secondary-emphasis">' + v.Fecha + '</span></div>' +
+                       '<p class="card-text small text-muted mb-1">RUT: ' + v['Rut Visitante'] + '</p><p class="card-text small mb-0">Ingreso: ' + v['Hora Ingreso'] + ' | Salida: ' + (v['Hora Salida'] || 'Activa') + '</p></div></div>';
+            }).join('');
+        }
+        updateVisitsList(visits);
+        document.getElementById('visitas-search').addEventListener('input', function(e) {
+            var searchTerm = e.target.value.toLowerCase();
+            var filteredVisits = originalVisitsData.filter(function(v) {
+                return v['Nombre Visita'].toLowerCase().includes(searchTerm) ||
+                       v['Rut Visitante'].toLowerCase().includes(searchTerm) ||
+                       v.Fecha.toLowerCase().includes(searchTerm) ||
+                       v['Hora Ingreso'].toLowerCase().includes(searchTerm) ||
+                       (v['Hora Salida'] || '').toLowerCase().includes(searchTerm);
+            });
+            updateVisitsList(filteredVisits);
+        });
+    }
+
+    function renderPackages(response) {
+        console.log('Renderizando encomiendas:', response);
+        var packagesContainer = document.getElementById('view-encomiendas');
+        if (!packagesContainer) return;
+        packagesContainer.classList.remove('loading');
+        if (!response.success) {
+            packagesContainer.innerHTML = createEmptyState('No se pudieron cargar las encomiendas.');
+            return;
+        }
+        originalPackagesData = response.data;
+        var packages = response.data;
+        var badge = document.getElementById('encomiendas-badge');
+        if (badge) {
+            badge.textContent = response.count;
+            badge.style.display = response.count > 0 ? 'inline-block' : 'none';
+        }
+        if (packages.length === 0) {
+            packagesContainer.innerHTML = createEmptyState('No tienes encomiendas registradas.');
+            return;
+        }
+        var searchHtml = '<div class="search-container mb-3"><input type="text" class="form-control" id="encomiendas-search" placeholder="Buscar por descripción, fecha, estado, RUT o nombre..."></div>';
+        packagesContainer.innerHTML = searchHtml + '<div id="encomiendas-list"></div>';
+        function updatePackagesList(data) {
+            var listContainer = document.getElementById('encomiendas-list');
+            if (data.length === 0) {
+                listContainer.innerHTML = createEmptyState('No se encontraron encomiendas.');
+                return;
+            }
+            // Ordenar: pendientes primero, luego no pendientes, ambos por ID descendente
+            data.sort(function(a, b) {
+                var isPendingA = String(a.Estado).toUpperCase() === 'PENDIENTE';
+                var isPendingB = String(b.Estado).toUpperCase() === 'PENDIENTE';
+                if (isPendingA && !isPendingB) return -1;
+                if (!isPendingA && isPendingB) return 1;
+                return b.ID - a.ID;
+            });
+            listContainer.innerHTML = data.map(function(p) {
+                var isPending = String(p.Estado).toUpperCase() === 'PENDIENTE';
+                return '<div class="card mb-2 shadow-sm ' + (isPending ? 'package-pending' : 'package-delivered') + '">' +
+                       '<div class="card-body py-2 px-3"><h6 class="card-title mb-1">' + p['Descripción'] + '</h6>' +
+                       '<p class="card-text small text-muted mb-0">Recibido: ' + p['Fecha Recepción'] + ' a las ' + p['Hora Recepción'] + ' | Estado: ' + p.Estado + '</p>' +
+                       '<p class="card-text small text-muted mb-0">Residente: ' + p['Nombre Residente'] + ' | RUT: ' + p['RUT Residente'] + '</p></div></div>';
+            }).join('');
+        }
+        updatePackagesList(packages);
+        document.getElementById('encomiendas-search').addEventListener('input', function(e) {
+            var searchTerm = e.target.value.toLowerCase();
+            var filteredPackages = originalPackagesData.filter(function(p) {
+                return (p['Descripción'] || '').toLowerCase().includes(searchTerm) ||
+                       (p['Fecha Recepción'] || '').toLowerCase().includes(searchTerm) ||
+                       (p['Hora Recepción'] || '').toLowerCase().includes(searchTerm) ||
+                       (p.Estado || '').toLowerCase().includes(searchTerm) ||
+                       (p['RUT Residente'] || '').toLowerCase().includes(searchTerm) ||
+                       (p['Nombre Residente'] || '').toLowerCase().includes(searchTerm);
+            });
+            updatePackagesList(filteredPackages);
+        });
+    }
+
+    function renderMessages(response) {
+        console.log('Renderizando mensajes:', response);
+        var messagesContainer = document.getElementById('view-mensajes');
+        if (!messagesContainer) return;
+        messagesContainer.classList.remove('loading');
+        if (!response.success) {
+            messagesContainer.innerHTML = createEmptyState('No se pudieron cargar los mensajes.');
+            return;
+        }
+        originalMessagesData = response.data;
+        var messages = response.data;
+        var badge = document.getElementById('mensajes-badge');
+        if (badge) {
+            badge.textContent = response.count;
+            badge.style.display = response.count > 0 ? 'inline-block' : 'none';
+        }
+        if (messages.length === 0) {
+            messagesContainer.innerHTML = createEmptyState('No hay mensajes de la administración.');
+            return;
+        }
+        var searchHtml = '<div class="search-container mb-3"><input type="text" class="form-control" id="mensajes-search" placeholder="Buscar por título, mensaje o fecha..."></div>';
+        messagesContainer.innerHTML = searchHtml + '<div id="mensajes-list"></div>';
+        function updateMessagesList(data) {
+            var listContainer = document.getElementById('mensajes-list');
+            if (data.length === 0) {
+                listContainer.innerHTML = createEmptyState('No se encontraron mensajes.');
+                return;
+            }
+            listContainer.innerHTML = data.map(function(m) {
+                var isRead = m.Visto === 'SÍ';
+                return '<div class="card mb-2 shadow-sm message-card ' + (isRead ? 'bg-light' : '') + '" data-message-id="' + m.ID + '" data-message-title="' + m.Titulo + '" data-message-body="' + m.Mensaje + '" data-message-date="' + m.Fecha + '">' +
+                       '<div class="card-body py-2 px-3"><div class="d-flex w-100 justify-content-between align-items-center"><h6 class="card-title mb-0">' + m.Titulo + '</h6><span class="badge bg-light text-dark">' + m.Fecha + '</span></div><hr class="my-2"><p class="card-text small">' + m.Mensaje.substring(0, 100) + (m.Mensaje.length > 100 ? '...' : '') + '</p></div></div>';
+            }).join('');
+            document.querySelectorAll('.message-card').forEach(function(card) {
+                card.addEventListener('click', function() {
+                    var messageId = this.dataset.messageId;
+                    var title = this.dataset.messageTitle;
+                    var body = this.dataset.messageBody;
+                    var date = this.dataset.messageDate;
+                    document.getElementById('messageDetailTitle').textContent = title;
+                    document.getElementById('messageDetailBody').innerHTML = '<p><strong>Fecha:</strong> ' + date + '</p><p>' + body + '</p>';
+                    messageDetailModal.show();
+                    if (!this.classList.contains('bg-light')) {
+                        messageDetailModal._element.addEventListener('hidden.bs.modal', function() {
+                            google.script.run
+                                .withSuccessHandler(function(response) {
+                                    console.log('Mensaje marcado como leído:', response);
+                                    if (response.success) {
+                                        google.script.run
+                                            .withSuccessHandler(function(response) {
+                                                originalMessagesData = response.data;
+                                                updateMessagesList(response.data);
+                                                var badge = document.getElementById('mensajes-badge');
+                                                if (badge) {
+                                                    badge.textContent = response.count;
+                                                    badge.style.display = response.count > 0 ? 'inline-block' : 'none';
+                                                }
+                                            })
+                                            .withFailureHandler(function(err) {
+                                                console.error('Error al recargar mensajes:', err);
+                                                handleLoadError(err, 'view-mensajes');
+                                            })
+                                            .getMessages();
+                                    } else {
+                                        showAlert('Error', response.message || 'No se pudo marcar el mensaje como leído.');
+                                    }
+                                })
+                                .withFailureHandler(function(err) {
+                                    console.error('Error al marcar mensaje como leído:', err);
+                                    showAlert('Error', 'Error de conexión al marcar el mensaje.');
+                                })
+                                .markMessageAsRead(messageId);
+                        }, { once: true });
+                    }
+                });
+            });
+        }
+        updateMessagesList(messages);
+        document.getElementById('mensajes-search').addEventListener('input', function(e) {
+            var searchTerm = e.target.value.toLowerCase();
+            var filteredMessages = originalMessagesData.filter(function(m) {
+                return m.Titulo.toLowerCase().includes(searchTerm) ||
+                       m.Mensaje.toLowerCase().includes(searchTerm) ||
+                       m.Fecha.toLowerCase().includes(searchTerm);
+            });
+            updateMessagesList(filteredMessages);
+        });
+    }
+
+    function renderReservations(response) {
+        console.log('Renderizando reservas:', response);
+        var reservationsContainer = document.getElementById('view-reservas');
+        if (!reservationsContainer) return;
+        reservationsContainer.classList.remove('loading');
+        if (!response.success) {
+            reservationsContainer.innerHTML = createEmptyState(response.message || 'No se pudieron cargar las reservas.');
+            return;
+        }
+        originalReservationsData = response.data;
+        var reservations = response.data;
+        var badge = document.getElementById('reservas-badge');
+        if (badge) {
+            badge.textContent = response.count;
+            badge.style.display = response.count > 0 ? 'inline-block' : 'none';
+        }
+        if (reservations.length === 0) {
+            reservationsContainer.innerHTML = createEmptyState('No tienes reservas registradas.');
+        }
+        var formHtml = isReservationsSupported ? 
+            '<div class="card mb-3 shadow-sm"><div class="card-header fw-bold"><i class="bi bi-calendar-plus me-2"></i>Nueva Reserva</div>' +
+            '<div class="card-body"><form id="reservationForm">' +
+            '<div class="mb-3"><label for="reservation-space" class="form-label">Espacio Común</label>' +
+            '<select class="form-control" id="reservation-space" required>' +
+            '<option value="" disabled selected>Seleccione un espacio</option>' +
+            '<option value="Sala Multiuso">Sala Multiuso</option>' +
+            '</select></div>' +
+            '<div class="mb-3"><label for="reservation-date" class="form-label">Fecha</label>' +
+            '<input type="date" class="form-control" id="reservation-date" required></div>' +
+            '<div class="mb-3"><label for="reservation-time" class="form-label">Hora</label>' +
+            '<input type="time" class="form-control" id="reservation-time" required></div>' +
+            '<div class="mb-3"><label for="reservation-comments" class="form-label">Comentarios (opcional)</label>' +
+            '<textarea class="form-control" id="reservation-comments" rows="3"></textarea></div>' +
+            '<div id="reservation-alert-container"></div>' +
+            '<button type="submit" class="btn btn-primary" id="submitReservationBtn"><i class="bi bi-calendar-check me-2"></i>Crear Reserva</button>' +
+            '</form></div></div>' : 
+            createEmptyState('La funcionalidad de creación de reservas no está disponible.');
+        var searchHtml = '<div class="search-container mb-3"><input type="text" class="form-control" id="reservas-search" placeholder="Buscar por espacio, fecha, estado..."></div>';
+        reservationsContainer.innerHTML = formHtml + searchHtml + '<div id="reservas-list"></div>';
+        function updateReservationsList(data) {
+            var listContainer = document.getElementById('reservas-list');
+            if (data.length === 0) {
+                listContainer.innerHTML = createEmptyState('No se encontraron reservas.');
+                return;
+            }
+            data.sort(function(a, b) {
+                var isActiveA = ['PENDIENTE', 'CONFIRMADA'].includes(String(a.Estado).toUpperCase());
+                var isActiveB = ['PENDIENTE', 'CONFIRMADA'].includes(String(b.Estado).toUpperCase());
+                if (isActiveA && !isActiveB) return -1;
+                if (!isActiveA && isActiveB) return 1;
+                return new Date(b['Fecha Reserva']) - new Date(a['Fecha Reserva']);
+            });
+            listContainer.innerHTML = data.map(function(r) {
+                var estadoClass = String(r.Estado).toUpperCase() === 'PENDIENTE' ? 'bg-warning' :
+                                 String(r.Estado).toUpperCase() === 'CONFIRMADA' ? 'bg-success' :
+                                 String(r.Estado).toUpperCase() === 'CANCELADA' ? 'bg-danger' : 'bg-secondary';
+                return '<div class="card mb-2 shadow-sm"><div class="card-body py-2 px-3">' +
+                       '<div class="d-flex justify-content-between"><h6 class="card-title mb-1">' + r['Espacio Común'] + '</h6>' +
+                       '<span class="badge ' + estadoClass + '">' + r.Estado + '</span></div>' +
+                       '<p class="card-text small text-muted mb-0">Fecha: ' + r['Fecha Reserva'] + ' | Hora: ' + r['Hora Reserva'] + '</p>' +
+                       '<p class="card-text small text-muted mb-0">Comentarios: ' + (r.Comentarios || 'Sin comentarios') + '</p></div></div>';
+            }).join('');
+        }
+        updateReservationsList(reservations);
+        document.getElementById('reservas-search').addEventListener('input', function(e) {
+            var searchTerm = e.target.value.toLowerCase();
+            var filteredReservations = originalReservationsData.filter(function(r) {
+                return (r['Espacio Común'] || '').toLowerCase().includes(searchTerm) ||
+                       (r['Fecha Reserva'] || '').toLowerCase().includes(searchTerm) ||
+                       (r['Hora Reserva'] || '').toLowerCase().includes(searchTerm) ||
+                       (r.Estado || '').toLowerCase().includes(searchTerm) ||
+                       (r.Comentarios || '').toLowerCase().includes(searchTerm);
+            });
+            updateReservationsList(filteredReservations);
+        });
+        if (isReservationsSupported) {
+            document.getElementById('reservationForm').addEventListener('submit', handleReservationSubmit);
+        }
+    }
+
+    function handleReservationSubmit(e) {
+        e.preventDefault();
+        if (!isReservationsSupported) {
+            mostrarAlertaInterna('reservation-alert-container', 'La funcionalidad de creación de reservas no está disponible.');
+            return;
+        }
+        console.log('Enviando solicitud de reserva...');
+        var form = e.target;
+        var space = document.getElementById('reservation-space').value;
+        var date = document.getElementById('reservation-date').value;
+        var time = document.getElementById('reservation-time').value;
+        var comments = document.getElementById('reservation-comments').value;
+        var submitButton = document.getElementById('submitReservationBtn');
+        var alertContainerId = 'reservation-alert-container';
+        if (!space || !date || !time) {
+            form.classList.add('was-validated');
+            mostrarAlertaInterna(alertContainerId, 'Todos los campos obligatorios deben completarse.');
+            return;
+        }
+        if (space !== 'Sala Multiuso') {
+            mostrarAlertaInterna(alertContainerId, 'Solo se puede reservar la Sala Multiuso.');
+            return;
+        }
+        var today = new Date().toISOString().split('T')[0];
+        if (date < today) {
+            mostrarAlertaInterna(alertContainerId, 'La fecha de la reserva no puede ser anterior a hoy.');
+            return;
+        }
+        showButtonLoading(submitButton, true, 'Creando');
+        document.getElementById('loading-message').textContent = 'Creando reserva...';
+        google.script.run
+            .withSuccessHandler(function(response) {
+                console.log('Respuesta de createReservation:', response);
+                showButtonLoading(submitButton, false, 'Crear Reserva');
+                if (response.success) {
+                    form.reset();
+                    form.classList.remove('was-validated');
+                    google.script.run
+                        .withSuccessHandler(function(res) {
+                            renderReservations(res);
+                            showAlert('Éxito', 'Reserva creada exitosamente.');
+                        })
+                        .withFailureHandler(function(err) {
+                            console.error('Error al recargar reservas:', err);
+                            handleLoadError(err, 'view-reservas');
+                        })
+                        .getResidentReservations();
+                } else {
+                    mostrarAlertaInterna(alertContainerId, response.message || 'No se pudo crear la reserva.');
+                }
+            })
+            .withFailureHandler(function(err) {
+                console.error('Error en createReservation:', err);
+                showButtonLoading(submitButton, false, 'Crear Reserva');
+                mostrarAlertaInterna(alertContainerId, 'Error de conexión al crear la reserva.');
+            })
+            .createReservation({
+                space: space,
+                date: date,
+                time: time,
+                comments: comments,
+                residentRut: myProfileData.Rut
+            });
+    }
+
+    function handleLogin(e) {
+        e.preventDefault();
+        console.log('Iniciando login...');
+        var form = e.target;
+        var rutInput = document.getElementById('rut');
+        var passwordInput = document.getElementById('password');
+        var loginButton = document.getElementById('loginButton');
+        if (!rutInput.value || !passwordInput.value) {
+            form.classList.add('was-validated');
+            mostrarAlertaInterna('login-alert-container', 'Ambos campos son obligatorios.');
+            return;
+        }
+        if (!validarRut(rutInput.value)) {
+            mostrarAlertaInterna('login-alert-container', 'El RUT ingresado no es válido.');
+            return;
+        }
+        showButtonLoading(loginButton, true, 'Verificando');
+        document.getElementById('loading-message').textContent = 'Verificando credenciales...';
+        google.script.run.withSuccessHandler(function(response) {
+            console.log('Respuesta de login:', response);
+            showButtonLoading(loginButton, false, 'Ingresar');
+            if (response.success) {
+                if (response.firstLogin) {
+                    passwordChangeModal.show();
+                } else {
+                    loginExitoso(response.data);
+                }
+            } else {
+                mostrarAlertaInterna('login-alert-container', response.message);
+            }
+        }).withFailureHandler(function(error) {
+            console.error('Error en login:', error);
+            showButtonLoading(loginButton, false, 'Ingresar');
+            mostrarAlertaInterna('login-alert-container', 'Error de conexión. Intente nuevamente.');
+        }).login(rutInput.value, passwordInput.value);
+    }
+
+    function handleSetNewPassword(e) {
+        e.preventDefault();
+        console.log('Estableciendo nueva contraseña...');
+        var newPass = document.getElementById('new-password').value;
+        var confirmPass = document.getElementById('confirm-password').value;
+        var saveBtn = document.getElementById('savePasswordBtn');
+        var alertContainerId = 'password-alert-container';
+        if (newPass.length < 6) return mostrarAlertaInterna(alertContainerId, 'La contraseña debe tener al menos 6 caracteres.');
+        if (newPass !== confirmPass) return mostrarAlertaInterna(alertContainerId, 'Las contraseñas no coinciden.');
+        showButtonLoading(saveBtn, true, 'Guardando');
+        document.getElementById('loading-message').textContent = 'Guardando nueva contraseña...';
+        google.script.run.withSuccessHandler(function(response) {
+            console.log('Respuesta de setNewPassword:', response);
+            showButtonLoading(saveBtn, false, 'Guardar y Entrar');
+            if (response.success) {
+                passwordChangeModal.hide();
+                loginExitoso(response.data);
+            } else {
+                mostrarAlertaInterna(alertContainerId, response.message);
+            }
+        }).withFailureHandler(function(error) {
+            console.error('Error en setNewPassword:', error);
+            showButtonLoading(saveBtn, false, 'Guardar y Entrar');
+            mostrarAlertaInterna(alertContainerId, 'Error de conexión.');
+        }).setNewPassword(newPass, confirmPass);
+    }
+
+    function handleProfileUpdate(e) {
+        e.preventDefault();
+        console.log('Actualizando perfil...');
+        var saveButton = document.getElementById('saveProfileBtn');
+        showButtonLoading(saveButton, true, 'Guardando');
+        var fono = document.getElementById('profile-fono').value;
+        var correo = document.getElementById('profile-correo').value;
+        if (!correo.includes('@')) {
+            showButtonLoading(saveButton, false, 'Guardar Cambios');
+            showAlert('Error', 'Por favor, ingrese un correo electrónico válido.');
+            return;
+        }
+        document.getElementById('loading-message').textContent = 'Actualizando datos del perfil...';
+        google.script.run.withSuccessHandler(function(res) {
+            console.log('Respuesta de updateResidentContactInfo:', res);
+            showButtonLoading(saveButton, false, 'Guardar Cambios');
+            if (res.success) {
+                showAlert('Éxito', 'Tus datos de contacto han sido actualizados.');
+            } else {
+                showAlert('Error', res.message || 'No se pudieron actualizar los datos.');
+            }
+        }).withFailureHandler(function(err) {
+            console.error('Error en updateResidentContactInfo:', err);
+            showButtonLoading(saveButton, false, 'Guardar Cambios');
+            showAlert('Error', 'Error de conexión al guardar los datos.');
+        }).updateResidentContactInfo({ fono: fono, correo: correo });
+    }
+
+    function handleFotoUpload(e) {
+        console.log('Subiendo foto...');
+        var file = e.target.files[0];
+        if (!file) return;
+        if (!['image/jpeg', 'image/png'].includes(file.type)) {
+            showAlert('Error', 'Por favor, seleccione una imagen en formato JPEG o PNG.');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            showAlert('Error', 'La imagen no debe exceder los 5MB.');
+            return;
+        }
+        var saveButton = document.getElementById('saveProfileBtn');
+        showButtonLoading(saveButton, true, 'Subiendo');
+        document.getElementById('loading-message').textContent = 'Subiendo foto de perfil...';
+        var reader = new FileReader();
+        reader.onload = function(event) {
+            var fileInfo = { base64: event.target.result, mimeType: file.type, fileName: file.name };
+            google.script.run.withSuccessHandler(function(res) {
+                console.log('Respuesta de uploadResidentePhoto:', res);
+                showButtonLoading(saveButton, false, 'Guardar Cambios');
+                if (res.success) {
+                    document.getElementById('profile-image-display').src = res.newUrl + '&t=' + new Date().getTime();
+                    showAlert('Éxito', 'Foto de perfil actualizada.');
+                } else {
+                    showAlert('Error', 'No se pudo subir la foto: ' + res.message);
+                }
+            }).withFailureHandler(function(err) {
+                console.error('Error en uploadResidentePhoto:', err);
+                showButtonLoading(saveButton, false, 'Guardar Cambios');
+                showAlert('Error', 'Error de conexión al subir la foto.');
+            }).uploadResidentePhoto(fileInfo, myProfileData.Rut);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function handleLogout() {
+        console.log('Cerrando sesión...');
+        var logoutBtn = document.getElementById('logoutBtn');
+        showButtonLoading(logoutBtn, true, 'Cerrando');
+        document.getElementById('loading-message').textContent = 'Cerrando sesión...';
+        google.script.run.withSuccessHandler(function() {
+            console.log('Sesión cerrada, recargando página');
+            window.location.reload();
+        }).withFailureHandler(function(err) {
+            console.error('Error en logout:', err);
+            showButtonLoading(logoutBtn, false, 'Cerrar Sesión');
+            showAlert('Error', 'Error al cerrar sesión.');
+        }).logout();
+    }
+
+    function loginExitoso(data) {
+        console.log('Login exitoso, datos:', data);
+        myProfileData = data;
+        setupNavigation();
+        document.querySelectorAll('.view-content').forEach(function(v) { v.classList.add('loading'); });
+
+        function loadData() {
+            return new Promise(function(resolve) {
+                console.log('Cargando datos iniciales...');
+                google.script.run
+                    .withSuccessHandler(function(response) {
+                        console.log('Datos de servicios:', response);
+                        renderHomePage(response);
+                    })
+                    .withFailureHandler(function(err) {
+                        console.error('Error en getPublicServicesStatus:', err);
+                        handleLoadError(err, 'view-inicio');
+                    })
+                    .getPublicServicesStatus();
+                setTimeout(() => {
+                    google.script.run
+                        .withSuccessHandler(function(response) {
+                            console.log('Datos de perfil:', response);
+                            renderProfile(response);
+                        })
+                        .withFailureHandler(function(err) {
+                            console.error('Error en getResidentData:', err);
+                            handleLoadError(err, 'view-perfil');
+                        })
+                        .getResidentData();
+                }, 500);
+                setTimeout(() => {
+                    google.script.run
+                        .withSuccessHandler(function(response) {
+                            console.log('Datos de visitas:', response);
+                            renderVisits(response);
+                        })
+                        .withFailureHandler(function(err) {
+                            console.error('Error en getResidentVisits:', err);
+                            handleLoadError(err, 'view-visitas');
+                        })
+                        .getResidentVisits();
+                }, 1000);
+                setTimeout(() => {
+                    google.script.run
+                        .withSuccessHandler(function(response) {
+                            console.log('Datos de encomiendas:', response);
+                            renderPackages(response);
+                        })
+                        .withFailureHandler(function(err) {
+                            console.error('Error en getResidentPackages:', err);
+                            handleLoadError(err, 'view-encomiendas');
+                        })
+                        .getResidentPackages();
+                }, 1500);
+                setTimeout(() => {
+                    google.script.run
+                        .withSuccessHandler(function(response) {
+                            console.log('Datos de mensajes:', response);
+                            renderMessages(response);
+                        })
+                        .withFailureHandler(function(err) {
+                            console.error('Error en getMessages:', err);
+                            handleLoadError(err, 'view-mensajes');
+                        })
+                        .getMessages();
+                }, 2000);
+                setTimeout(() => {
+                    if (isReservationsSupported) {
+                        google.script.run
+                            .withSuccessHandler(function(response) {
+                                console.log('Datos de reservas:', response);
+                                renderReservations(response);
+                            })
+                            .withFailureHandler(function(err) {
+                                console.error('Error en getResidentReservations:', err);
+                                isReservationsSupported = false;
+                                renderReservations({ success: false, message: 'La funcionalidad de reservas no está disponible.' });
+                            })
+                            .getResidentReservations();
+                    } else {
+                        renderReservations({ success: false, message: 'La funcionalidad de reservas no está disponible.' });
+                    }
+                    resolve();
+                }, 2500);
+            });
+        }
+        loadData().then(function() {
+            console.log('Datos cargados, mostrando app-view');
+            document.getElementById('loading-message').textContent = 'Finalizando...';
+            mostrarVista('app-view');
+        }).catch(function(err) {
+            console.error('Error al cargar datos:', err);
+            document.getElementById('loading-message').textContent = 'Error al cargar datos';
+            mostrarVista('app-view');
+            showAlert('Error', 'No se pudieron cargar todos los datos. Por favor, intenta de nuevo.');
+        });
+
+        // Timeout de seguridad
+        setTimeout(function() {
+            if (document.getElementById('loading-view').classList.contains('active')) {
+                console.warn('Timeout alcanzado, forzando app-view');
+                mostrarVista('app-view');
+                showAlert('Advertencia', 'La carga de datos tomó demasiado tiempo.');
+            }
+        }, 15000);
+    }
+
+    // Iniciar la aplicación
+    waitForBootstrap(function() {
+        console.log('Bootstrap cargado, inicializando aplicación...');
+        alertModal = new bootstrap.Modal(document.getElementById('alertModal'));
+        passwordChangeModal = new bootstrap.Modal(document.getElementById('passwordChangeModal'));
+        messageDetailModal = new bootstrap.Modal(document.getElementById('messageDetailModal'));
+
+        // Configurar eventos
+        var loginForm = document.getElementById('loginForm');
+        if (loginForm) loginForm.addEventListener('submit', handleLogin);
+        var passwordChangeForm = document.getElementById('passwordChangeForm');
+        if (passwordChangeForm) passwordChangeForm.addEventListener('submit', handleSetNewPassword);
+        var rutInput = document.getElementById('rut');
+        if (rutInput) rutInput.addEventListener('input', formatoRutLive);
+
+        // Verificar estado de login
+        document.getElementById('loading-message').textContent = 'Verificando sesión...';
+        google.script.run.withSuccessHandler(function(response) {
+            console.log('Estado de login:', response);
+            if (response.isLoggedIn) {
+                google.script.run.withSuccessHandler(function(res) {
+                    if (res.success) loginExitoso(res.data);
+                    else {
+                        console.error('Error al obtener datos del residente:', res.error);
+                        mostrarVista('login-view');
+                    }
+                }).withFailureHandler(function(err) {
+                    console.error('Error en getResidentData:', err);
+                    mostrarVista('login-view');
+                }).getResidentData();
+            } else {
+                mostrarVista('login-view');
+            }
+        }).withFailureHandler(function(err) {
+            console.error('Error en checkLogin:', err);
+            mostrarVista('login-view');
+        }).checkLogin();
+    });
+});
+</script>
