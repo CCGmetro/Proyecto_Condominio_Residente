@@ -1,7 +1,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM cargado, iniciando aplicación...');
-    
+
     // Función para esperar a que Bootstrap esté cargado
     function waitForBootstrap(callback, maxAttempts = 10, interval = 500) {
         let attempts = 0;
@@ -32,12 +32,41 @@ document.addEventListener('DOMContentLoaded', function() {
     let originalVisitsData = [];
     let originalPackagesData = [];
     let originalMessagesData = [];
-    let originalReservationsData = [];
-    let isReservationsSupported = typeof google !== 'undefined' && google.script && google.script.run && typeof google.script.run.getResidentReservations === 'function';
+    let isRendering = false; // Controlar transiciones de vistas
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos para caché local
+    const PAGE_SIZE = 10; // Tamaño de página para paginación
 
     // Utility Functions
     function createEmptyState(message) {
         return '<div class="text-center text-muted p-5"><i class="bi bi-info-circle" style="font-size: 3rem;"></i><p class="mt-2">' + message + '</p></div>';
+    }
+
+    // Nuevo: Función para crear skeletons (placeholders visuales)
+    function createSkeleton(count = 3) {
+        return Array(count).fill().map(() => '<div class="card mb-2 shadow-sm"><div class="card-body py-2 px-3"><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text"></div></div></div>').join('');
+    }
+
+    // Nuevo: Funciones para manejar caché en localStorage
+    function getCachedData(key) {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+            const { data, timestamp } = JSON.parse(cached);
+            if (Date.now() - timestamp < CACHE_DURATION) {
+                console.log('Datos obtenidos de localStorage:', key);
+                return data;
+            }
+        }
+        return null;
+    }
+
+    function setCachedData(key, data) {
+        localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+        console.log('Datos cacheados en localStorage:', key);
+    }
+
+    function clearCachedData(key) {
+        localStorage.removeItem(key);
+        console.log('Caché local eliminado:', key);
     }
 
     function showAlert(title, body) {
@@ -105,21 +134,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Navigation and Views
     function mostrarVista(vistaId) {
+        if (isRendering) {
+            console.log('Renderización en curso, ignorando cambio de vista a:', vistaId);
+            return;
+        }
         console.log('Cambiando a vista:', vistaId);
+        isRendering = true;
         var vistaActiva = document.getElementById(vistaId);
         if (!vistaActiva) {
             console.error('No se encontró la vista con ID:', vistaId);
             showAlert('Error', 'No se pudo cargar la vista principal.');
+            isRendering = false;
             return;
         }
         document.querySelectorAll('.view').forEach(function(v) {
-            if (v.classList.contains('active')) {
+            if (v !== vistaActiva) {
                 v.classList.remove('active');
                 setTimeout(() => v.style.display = 'none', 300);
             }
         });
         vistaActiva.style.display = 'block';
-        setTimeout(() => vistaActiva.classList.add('active'), 10);
+        setTimeout(() => {
+            vistaActiva.classList.add('active');
+            isRendering = false;
+        }, 10);
         var loadingView = document.getElementById('loading-view');
         if (loadingView) {
             loadingView.classList.remove('active');
@@ -133,27 +171,50 @@ document.addEventListener('DOMContentLoaded', function() {
         navLinks.forEach(function(link) {
             link.addEventListener('click', function(e) {
                 e.preventDefault();
+                if (isRendering) {
+                    console.log('Navegación bloqueada, renderización en curso');
+                    return;
+                }
                 var viewId = this.dataset.view;
                 var title = this.dataset.title;
+                console.log('Navegando a:', viewId, title);
                 navLinks.forEach(function(l) { l.classList.remove('active'); });
                 this.classList.add('active');
                 document.querySelectorAll('.view-content').forEach(function(v) { v.classList.remove('active'); });
                 var viewContainer = document.getElementById('view-' + viewId);
+                if (!viewContainer) {
+                    console.error('No se encontró contenedor de vista:', 'view-' + viewId);
+                    return;
+                }
                 viewContainer.classList.add('active');
                 document.getElementById('header-title').textContent = title;
                 window.scrollTo(0, 0);
-                // Re-renderizar la vista para restablecer el buscador
-                if (viewId === 'visitas') renderVisits({ success: true, data: originalVisitsData, count: originalVisitsData.length });
-                else if (viewId === 'encomiendas') renderPackages({ success: true, data: originalPackagesData, count: originalPackagesData.filter(p => String(p.Estado).toUpperCase() === 'PENDIENTE').length });
-                else if (viewId === 'mensajes') renderMessages({ success: true, data: originalMessagesData, count: originalMessagesData.filter(m => m.Visto !== 'SÍ').length });
-                else if (viewId === 'reservas') {
-                    if (isReservationsSupported) {
-                        renderReservations({ success: true, data: originalReservationsData, count: originalReservationsData.filter(r => ['PENDIENTE', 'CONFIRMADA'].includes(String(r.Estado).toUpperCase())).length });
-                    } else {
-                        renderReservations({ success: false, message: 'La funcionalidad de reservas no está disponible en este momento.' });
-                    }
+                // Cargar datos si es necesario
+                if (viewId === 'encomiendas') {
+                    loadPackages(0);
+                } else if (viewId === 'mensajes') {
+                    loadMessages(0);
+                } else if (viewId === 'visitas') {
+                    loadVisits(0);
                 }
             });
+        });
+
+        // Nuevo: Configurar IntersectionObserver para carga diferida
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const viewId = entry.target.id.replace('view-', '');
+                    if (viewId === 'encomiendas' && !originalPackagesData.length) loadPackages(0);
+                    if (viewId === 'mensajes' && !originalMessagesData.length) loadMessages(0);
+                    if (viewId === 'visitas' && !originalVisitsData.length) loadVisits(0);
+                }
+            });
+        }, { threshold: 0.1 });
+
+        ['view-encomiendas', 'view-mensajes', 'view-visitas'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) observer.observe(element);
         });
     }
 
@@ -178,6 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                  '<li class="list-group-item d-flex justify-content-between align-items-center">Lavadoras en uso<span class="badge bg-info rounded-pill">' + d.lavanderia.lavadoras.enUso + '</span></li>' +
                                  '<li class="list-group-item d-flex justify-content-between align-items-center">Secadoras en uso<span class="badge bg-warning rounded-pill">' + d.lavanderia.secadoras.enUso + '</span></li></ul></div>' +
                                  '<div class="card shadow-sm"><div class="card-header fw-bold"><i class="bi bi-arrow-down-up me-2"></i>Estado de Ascensores</div><ul class="list-group list-group-flush">' + ascensorHtml + '</ul></div>';
+        setCachedData('home-data', response.data);
     }
 
     function renderProfile(response) {
@@ -197,15 +259,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                     '<div class="mb-3"><label for="profile-correo" class="form-label">Correo Electrónico</label><input type="email" class="form-control" id="profile-correo" value="' + (myProfileData.Correo || '') + '"></div>' +
                                     '<div class="mb-3"><label for="profile-foto" class="form-label">Cambiar Foto</label><input class="form-control" type="file" id="profile-foto" accept="image/jpeg,image/png"></div>' +
                                     '<div class="d-grid gap-2"><button type="submit" class="btn btn-success" id="saveProfileBtn"><i class="bi bi-save-fill me-2"></i>Guardar Cambios</button>' +
-                                    '<button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="passwordChangeModal">Cambiar Contraseña</button>' +
+                                    '<button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#passwordChangeModal">Cambiar Contraseña</button>' +
                                     '<button type="button" class="btn btn-outline-danger" id="logoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión</button></div></form>';
         document.getElementById('profileForm').addEventListener('submit', handleProfileUpdate);
         document.getElementById('logoutBtn').addEventListener('click', handleLogout);
         document.getElementById('profile-image-display').addEventListener('click', function() { document.getElementById('profile-foto').click(); });
         document.getElementById('profile-foto').addEventListener('change', handleFotoUpload);
+        setCachedData('profile-data', response.data);
     }
 
-    function renderVisits(response) {
+    function renderVisits(response, append = false) {
         console.log('Renderizando visitas:', response);
         var visitsContainer = document.getElementById('view-visitas');
         if (!visitsContainer) return;
@@ -214,7 +277,8 @@ document.addEventListener('DOMContentLoaded', function() {
             visitsContainer.innerHTML = createEmptyState('No se pudo cargar el historial de visitas.');
             return;
         }
-        originalVisitsData = response.data;
+        originalVisitsData = append ? originalVisitsData.concat(response.data) : response.data;
+        setCachedData('visits-data', originalVisitsData);
         var visits = response.data;
         if (visits.length === 0) {
             visitsContainer.innerHTML = createEmptyState('No tienes un historial de visitas.');
@@ -232,6 +296,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 return '<div class="card mb-2 shadow-sm"><div class="card-body py-2 px-3"><div class="d-flex justify-content-between"><h6 class="card-title mb-1">' + v['Nombre Visita'] + '</h6><span class="badge bg-secondary-subtle text-secondary-emphasis">' + v.Fecha + '</span></div>' +
                        '<p class="card-text small text-muted mb-1">RUT: ' + v['Rut Visitante'] + '</p><p class="card-text small mb-0">Ingreso: ' + v['Hora Ingreso'] + ' | Salida: ' + (v['Hora Salida'] || 'Activa') + '</p></div></div>';
             }).join('');
+            if (response.total > originalVisitsData.length) {
+                listContainer.innerHTML += '<button class="btn btn-outline-primary w-100 mt-3" id="load-more-visits">Cargar más</button>';
+                document.getElementById('load-more-visits').addEventListener('click', () => loadVisits(originalVisitsData.length));
+            }
         }
         updateVisitsList(visits);
         document.getElementById('visitas-search').addEventListener('input', function(e) {
@@ -247,7 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function renderPackages(response) {
+    function renderPackages(response, append = false) {
         console.log('Renderizando encomiendas:', response);
         var packagesContainer = document.getElementById('view-encomiendas');
         if (!packagesContainer) return;
@@ -256,13 +324,14 @@ document.addEventListener('DOMContentLoaded', function() {
             packagesContainer.innerHTML = createEmptyState('No se pudieron cargar las encomiendas.');
             return;
         }
-        originalPackagesData = response.data;
-        var packages = response.data;
+        originalPackagesData = append ? originalPackagesData.concat(response.data) : response.data;
+        setCachedData('packages-data', originalPackagesData);
         var badge = document.getElementById('encomiendas-badge');
         if (badge) {
             badge.textContent = response.count;
             badge.style.display = response.count > 0 ? 'inline-block' : 'none';
         }
+        var packages = response.data;
         if (packages.length === 0) {
             packagesContainer.innerHTML = createEmptyState('No tienes encomiendas registradas.');
             return;
@@ -275,7 +344,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 listContainer.innerHTML = createEmptyState('No se encontraron encomiendas.');
                 return;
             }
-            // Ordenar: pendientes primero, luego no pendientes, ambos por ID descendente
             data.sort(function(a, b) {
                 var isPendingA = String(a.Estado).toUpperCase() === 'PENDIENTE';
                 var isPendingB = String(b.Estado).toUpperCase() === 'PENDIENTE';
@@ -290,6 +358,10 @@ document.addEventListener('DOMContentLoaded', function() {
                        '<p class="card-text small text-muted mb-0">Recibido: ' + p['Fecha Recepción'] + ' a las ' + p['Hora Recepción'] + ' | Estado: ' + p.Estado + '</p>' +
                        '<p class="card-text small text-muted mb-0">Residente: ' + p['Nombre Residente'] + ' | RUT: ' + p['RUT Residente'] + '</p></div></div>';
             }).join('');
+            if (response.total > originalPackagesData.length) {
+                listContainer.innerHTML += '<button class="btn btn-outline-primary w-100 mt-3" id="load-more-packages">Cargar más</button>';
+                document.getElementById('load-more-packages').addEventListener('click', () => loadPackages(originalPackagesData.length));
+            }
         }
         updatePackagesList(packages);
         document.getElementById('encomiendas-search').addEventListener('input', function(e) {
@@ -306,7 +378,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function renderMessages(response) {
+    function renderMessages(response, append = false) {
         console.log('Renderizando mensajes:', response);
         var messagesContainer = document.getElementById('view-mensajes');
         if (!messagesContainer) return;
@@ -315,13 +387,14 @@ document.addEventListener('DOMContentLoaded', function() {
             messagesContainer.innerHTML = createEmptyState('No se pudieron cargar los mensajes.');
             return;
         }
-        originalMessagesData = response.data;
-        var messages = response.data;
+        originalMessagesData = append ? originalMessagesData.concat(response.data) : response.data;
+        setCachedData('messages-data', originalMessagesData);
         var badge = document.getElementById('mensajes-badge');
         if (badge) {
             badge.textContent = response.count;
             badge.style.display = response.count > 0 ? 'inline-block' : 'none';
         }
+        var messages = response.data;
         if (messages.length === 0) {
             messagesContainer.innerHTML = createEmptyState('No hay mensajes de la administración.');
             return;
@@ -339,48 +412,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 return '<div class="card mb-2 shadow-sm message-card ' + (isRead ? 'bg-light' : '') + '" data-message-id="' + m.ID + '" data-message-title="' + m.Titulo + '" data-message-body="' + m.Mensaje + '" data-message-date="' + m.Fecha + '">' +
                        '<div class="card-body py-2 px-3"><div class="d-flex w-100 justify-content-between align-items-center"><h6 class="card-title mb-0">' + m.Titulo + '</h6><span class="badge bg-light text-dark">' + m.Fecha + '</span></div><hr class="my-2"><p class="card-text small">' + m.Mensaje.substring(0, 100) + (m.Mensaje.length > 100 ? '...' : '') + '</p></div></div>';
             }).join('');
+            if (response.total > originalMessagesData.length) {
+                listContainer.innerHTML += '<button class="btn btn-outline-primary w-100 mt-3" id="load-more-messages">Cargar más</button>';
+                document.getElementById('load-more-messages').addEventListener('click', () => loadMessages(originalMessagesData.length));
+            }
             document.querySelectorAll('.message-card').forEach(function(card) {
-                card.addEventListener('click', function() {
-                    var messageId = this.dataset.messageId;
-                    var title = this.dataset.messageTitle;
-                    var body = this.dataset.messageBody;
-                    var date = this.dataset.messageDate;
-                    document.getElementById('messageDetailTitle').textContent = title;
-                    document.getElementById('messageDetailBody').innerHTML = '<p><strong>Fecha:</strong> ' + date + '</p><p>' + body + '</p>';
-                    messageDetailModal.show();
-                    if (!this.classList.contains('bg-light')) {
-                        messageDetailModal._element.addEventListener('hidden.bs.modal', function() {
-                            google.script.run
-                                .withSuccessHandler(function(response) {
-                                    console.log('Mensaje marcado como leído:', response);
-                                    if (response.success) {
-                                        google.script.run
-                                            .withSuccessHandler(function(response) {
-                                                originalMessagesData = response.data;
-                                                updateMessagesList(response.data);
-                                                var badge = document.getElementById('mensajes-badge');
-                                                if (badge) {
-                                                    badge.textContent = response.count;
-                                                    badge.style.display = response.count > 0 ? 'inline-block' : 'none';
-                                                }
-                                            })
-                                            .withFailureHandler(function(err) {
-                                                console.error('Error al recargar mensajes:', err);
-                                                handleLoadError(err, 'view-mensajes');
-                                            })
-                                            .getMessages();
-                                    } else {
-                                        showAlert('Error', response.message || 'No se pudo marcar el mensaje como leído.');
-                                    }
-                                })
-                                .withFailureHandler(function(err) {
-                                    console.error('Error al marcar mensaje como leído:', err);
-                                    showAlert('Error', 'Error de conexión al marcar el mensaje.');
-                                })
-                                .markMessageAsRead(messageId);
-                        }, { once: true });
-                    }
-                });
+                card.addEventListener('click', handleMessageClick);
             });
         }
         updateMessagesList(messages);
@@ -395,149 +432,79 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function renderReservations(response) {
-        console.log('Renderizando reservas:', response);
-        var reservationsContainer = document.getElementById('view-reservas');
-        if (!reservationsContainer) return;
-        reservationsContainer.classList.remove('loading');
-        if (!response.success) {
-            reservationsContainer.innerHTML = createEmptyState(response.message || 'No se pudieron cargar las reservas.');
+    // Nuevo: Funciones para cargar datos con paginación
+    function loadPackages(start) {
+        const container = document.getElementById('view-encomiendas');
+        container.innerHTML = createSkeleton();
+        container.classList.add('loading');
+        const cached = getCachedData('packages-data');
+        if (cached && start === 0) {
+            renderPackages({ success: true, data: cached, count: cached.filter(p => String(p.Estado).toUpperCase() === 'PENDIENTE').length, total: cached.length });
             return;
         }
-        originalReservationsData = response.data;
-        var reservations = response.data;
-        var badge = document.getElementById('reservas-badge');
-        if (badge) {
-            badge.textContent = response.count;
-            badge.style.display = response.count > 0 ? 'inline-block' : 'none';
-        }
-        if (reservations.length === 0) {
-            reservationsContainer.innerHTML = createEmptyState('No tienes reservas registradas.');
-        }
-        var formHtml = isReservationsSupported ? 
-            '<div class="card mb-3 shadow-sm"><div class="card-header fw-bold"><i class="bi bi-calendar-plus me-2"></i>Nueva Reserva</div>' +
-            '<div class="card-body"><form id="reservationForm">' +
-            '<div class="mb-3"><label for="reservation-space" class="form-label">Espacio Común</label>' +
-            '<select class="form-control" id="reservation-space" required>' +
-            '<option value="" disabled selected>Seleccione un espacio</option>' +
-            '<option value="Sala Multiuso">Sala Multiuso</option>' +
-            '</select></div>' +
-            '<div class="mb-3"><label for="reservation-date" class="form-label">Fecha</label>' +
-            '<input type="date" class="form-control" id="reservation-date" required></div>' +
-            '<div class="mb-3"><label for="reservation-time" class="form-label">Hora</label>' +
-            '<input type="time" class="form-control" id="reservation-time" required></div>' +
-            '<div class="mb-3"><label for="reservation-comments" class="form-label">Comentarios (opcional)</label>' +
-            '<textarea class="form-control" id="reservation-comments" rows="3"></textarea></div>' +
-            '<div id="reservation-alert-container"></div>' +
-            '<button type="submit" class="btn btn-primary" id="submitReservationBtn"><i class="bi bi-calendar-check me-2"></i>Crear Reserva</button>' +
-            '</form></div></div>' : 
-            createEmptyState('La funcionalidad de creación de reservas no está disponible.');
-        var searchHtml = '<div class="search-container mb-3"><input type="text" class="form-control" id="reservas-search" placeholder="Buscar por espacio, fecha, estado..."></div>';
-        reservationsContainer.innerHTML = formHtml + searchHtml + '<div id="reservas-list"></div>';
-        function updateReservationsList(data) {
-            var listContainer = document.getElementById('reservas-list');
-            if (data.length === 0) {
-                listContainer.innerHTML = createEmptyState('No se encontraron reservas.');
-                return;
-            }
-            data.sort(function(a, b) {
-                var isActiveA = ['PENDIENTE', 'CONFIRMADA'].includes(String(a.Estado).toUpperCase());
-                var isActiveB = ['PENDIENTE', 'CONFIRMADA'].includes(String(b.Estado).toUpperCase());
-                if (isActiveA && !isActiveB) return -1;
-                if (!isActiveA && isActiveB) return 1;
-                return new Date(b['Fecha Reserva']) - new Date(a['Fecha Reserva']);
-            });
-            listContainer.innerHTML = data.map(function(r) {
-                var estadoClass = String(r.Estado).toUpperCase() === 'PENDIENTE' ? 'bg-warning' :
-                                 String(r.Estado).toUpperCase() === 'CONFIRMADA' ? 'bg-success' :
-                                 String(r.Estado).toUpperCase() === 'CANCELADA' ? 'bg-danger' : 'bg-secondary';
-                return '<div class="card mb-2 shadow-sm"><div class="card-body py-2 px-3">' +
-                       '<div class="d-flex justify-content-between"><h6 class="card-title mb-1">' + r['Espacio Común'] + '</h6>' +
-                       '<span class="badge ' + estadoClass + '">' + r.Estado + '</span></div>' +
-                       '<p class="card-text small text-muted mb-0">Fecha: ' + r['Fecha Reserva'] + ' | Hora: ' + r['Hora Reserva'] + '</p>' +
-                       '<p class="card-text small text-muted mb-0">Comentarios: ' + (r.Comentarios || 'Sin comentarios') + '</p></div></div>';
-            }).join('');
-        }
-        updateReservationsList(reservations);
-        document.getElementById('reservas-search').addEventListener('input', function(e) {
-            var searchTerm = e.target.value.toLowerCase();
-            var filteredReservations = originalReservationsData.filter(function(r) {
-                return (r['Espacio Común'] || '').toLowerCase().includes(searchTerm) ||
-                       (r['Fecha Reserva'] || '').toLowerCase().includes(searchTerm) ||
-                       (r['Hora Reserva'] || '').toLowerCase().includes(searchTerm) ||
-                       (r.Estado || '').toLowerCase().includes(searchTerm) ||
-                       (r.Comentarios || '').toLowerCase().includes(searchTerm);
-            });
-            updateReservationsList(filteredReservations);
-        });
-        if (isReservationsSupported) {
-            document.getElementById('reservationForm').addEventListener('submit', handleReservationSubmit);
-        }
+        google.script.run
+            .withSuccessHandler(response => renderPackages(response, start > 0))
+            .withFailureHandler(error => handleLoadError(error, 'view-encomiendas'))
+            .getResidentPackages(start, PAGE_SIZE);
     }
 
-    function handleReservationSubmit(e) {
-        e.preventDefault();
-        if (!isReservationsSupported) {
-            mostrarAlertaInterna('reservation-alert-container', 'La funcionalidad de creación de reservas no está disponible.');
+    function loadMessages(start) {
+        const container = document.getElementById('view-mensajes');
+        container.innerHTML = createSkeleton();
+        container.classList.add('loading');
+        const cached = getCachedData('messages-data');
+        if (cached && start === 0) {
+            renderMessages({ success: true, data: cached, count: cached.filter(m => m.Visto !== 'SÍ').length, total: cached.length });
             return;
         }
-        console.log('Enviando solicitud de reserva...');
-        var form = e.target;
-        var space = document.getElementById('reservation-space').value;
-        var date = document.getElementById('reservation-date').value;
-        var time = document.getElementById('reservation-time').value;
-        var comments = document.getElementById('reservation-comments').value;
-        var submitButton = document.getElementById('submitReservationBtn');
-        var alertContainerId = 'reservation-alert-container';
-        if (!space || !date || !time) {
-            form.classList.add('was-validated');
-            mostrarAlertaInterna(alertContainerId, 'Todos los campos obligatorios deben completarse.');
-            return;
-        }
-        if (space !== 'Sala Multiuso') {
-            mostrarAlertaInterna(alertContainerId, 'Solo se puede reservar la Sala Multiuso.');
-            return;
-        }
-        var today = new Date().toISOString().split('T')[0];
-        if (date < today) {
-            mostrarAlertaInterna(alertContainerId, 'La fecha de la reserva no puede ser anterior a hoy.');
-            return;
-        }
-        showButtonLoading(submitButton, true, 'Creando');
-        document.getElementById('loading-message').textContent = 'Creando reserva...';
         google.script.run
-            .withSuccessHandler(function(response) {
-                console.log('Respuesta de createReservation:', response);
-                showButtonLoading(submitButton, false, 'Crear Reserva');
-                if (response.success) {
-                    form.reset();
-                    form.classList.remove('was-validated');
-                    google.script.run
-                        .withSuccessHandler(function(res) {
-                            renderReservations(res);
-                            showAlert('Éxito', 'Reserva creada exitosamente.');
-                        })
-                        .withFailureHandler(function(err) {
-                            console.error('Error al recargar reservas:', err);
-                            handleLoadError(err, 'view-reservas');
-                        })
-                        .getResidentReservations();
-                } else {
-                    mostrarAlertaInterna(alertContainerId, response.message || 'No se pudo crear la reserva.');
-                }
-            })
-            .withFailureHandler(function(err) {
-                console.error('Error en createReservation:', err);
-                showButtonLoading(submitButton, false, 'Crear Reserva');
-                mostrarAlertaInterna(alertContainerId, 'Error de conexión al crear la reserva.');
-            })
-            .createReservation({
-                space: space,
-                date: date,
-                time: time,
-                comments: comments,
-                residentRut: myProfileData.Rut
-            });
+            .withSuccessHandler(response => renderMessages(response, start > 0))
+            .withFailureHandler(error => handleLoadError(error, 'view-mensajes'))
+            .getMessages(start, PAGE_SIZE);
+    }
+
+    function loadVisits(start) {
+        const container = document.getElementById('view-visitas');
+        container.innerHTML = createSkeleton();
+        container.classList.add('loading');
+        const cached = getCachedData('visits-data');
+        if (cached && start === 0) {
+            renderVisits({ success: true, data: cached, count: cached.length, total: cached.length });
+            return;
+        }
+        google.script.run
+            .withSuccessHandler(response => renderVisits(response, start > 0))
+            .withFailureHandler(error => handleLoadError(error, 'view-visitas'))
+            .getResidentVisits(start, PAGE_SIZE);
+    }
+
+    function handleMessageClick(e) {
+        var card = e.target.closest('.card');
+        if (!card) return;
+        var messageId = card.dataset.messageId;
+        var title = card.dataset.messageTitle;
+        var body = card.dataset.messageBody;
+        var date = card.dataset.messageDate;
+        document.getElementById('messageDetailTitle').textContent = title;
+        document.getElementById('messageDetailBody').innerHTML = '<p><strong>Fecha:</strong> ' + date + '</p><p>' + body + '</p>';
+        messageDetailModal.show();
+        if (!card.classList.contains('bg-light')) {
+            google.script.run
+                .withSuccessHandler(function(response) {
+                    console.log('Mensaje marcado como leído:', response);
+                    if (response.success) {
+                        clearCachedData('messages-data');
+                        loadMessages(0);
+                    } else {
+                        showAlert('Error', response.message || 'No se pudo marcar el mensaje como leído.');
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    console.error('Error al marcar mensaje como leído:', err);
+                    showAlert('Error', 'Error de conexión al marcar el mensaje.');
+                })
+                .markMessageAsRead(messageId);
+        }
     }
 
     function handleLogin(e) {
@@ -621,6 +588,7 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Respuesta de updateResidentContactInfo:', res);
             showButtonLoading(saveButton, false, 'Guardar Cambios');
             if (res.success) {
+                clearCachedData('profile-data');
                 showAlert('Éxito', 'Tus datos de contacto han sido actualizados.');
             } else {
                 showAlert('Error', res.message || 'No se pudieron actualizar los datos.');
@@ -654,6 +622,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('Respuesta de uploadResidentePhoto:', res);
                 showButtonLoading(saveButton, false, 'Guardar Cambios');
                 if (res.success) {
+                    clearCachedData('profile-data');
                     document.getElementById('profile-image-display').src = res.newUrl + '&t=' + new Date().getTime();
                     showAlert('Éxito', 'Foto de perfil actualizada.');
                 } else {
@@ -675,6 +644,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('loading-message').textContent = 'Cerrando sesión...';
         google.script.run.withSuccessHandler(function() {
             console.log('Sesión cerrada, recargando página');
+            ['home-data', 'profile-data', 'visits-data', 'packages-data', 'messages-data'].forEach(clearCachedData);
             window.location.reload();
         }).withFailureHandler(function(err) {
             console.error('Error en logout:', err);
@@ -689,106 +659,33 @@ document.addEventListener('DOMContentLoaded', function() {
         setupNavigation();
         document.querySelectorAll('.view-content').forEach(function(v) { v.classList.add('loading'); });
 
-        function loadData() {
-            return new Promise(function(resolve) {
-                console.log('Cargando datos iniciales...');
-                google.script.run
-                    .withSuccessHandler(function(response) {
-                        console.log('Datos de servicios:', response);
-                        renderHomePage(response);
-                    })
-                    .withFailureHandler(function(err) {
-                        console.error('Error en getPublicServicesStatus:', err);
-                        handleLoadError(err, 'view-inicio');
-                    })
-                    .getPublicServicesStatus();
-                setTimeout(() => {
-                    google.script.run
-                        .withSuccessHandler(function(response) {
-                            console.log('Datos de perfil:', response);
-                            renderProfile(response);
-                        })
-                        .withFailureHandler(function(err) {
-                            console.error('Error en getResidentData:', err);
-                            handleLoadError(err, 'view-perfil');
-                        })
-                        .getResidentData();
-                }, 500);
-                setTimeout(() => {
-                    google.script.run
-                        .withSuccessHandler(function(response) {
-                            console.log('Datos de visitas:', response);
-                            renderVisits(response);
-                        })
-                        .withFailureHandler(function(err) {
-                            console.error('Error en getResidentVisits:', err);
-                            handleLoadError(err, 'view-visitas');
-                        })
-                        .getResidentVisits();
-                }, 1000);
-                setTimeout(() => {
-                    google.script.run
-                        .withSuccessHandler(function(response) {
-                            console.log('Datos de encomiendas:', response);
-                            renderPackages(response);
-                        })
-                        .withFailureHandler(function(err) {
-                            console.error('Error en getResidentPackages:', err);
-                            handleLoadError(err, 'view-encomiendas');
-                        })
-                        .getResidentPackages();
-                }, 1500);
-                setTimeout(() => {
-                    google.script.run
-                        .withSuccessHandler(function(response) {
-                            console.log('Datos de mensajes:', response);
-                            renderMessages(response);
-                        })
-                        .withFailureHandler(function(err) {
-                            console.error('Error en getMessages:', err);
-                            handleLoadError(err, 'view-mensajes');
-                        })
-                        .getMessages();
-                }, 2000);
-                setTimeout(() => {
-                    if (isReservationsSupported) {
-                        google.script.run
-                            .withSuccessHandler(function(response) {
-                                console.log('Datos de reservas:', response);
-                                renderReservations(response);
-                            })
-                            .withFailureHandler(function(err) {
-                                console.error('Error en getResidentReservations:', err);
-                                isReservationsSupported = false;
-                                renderReservations({ success: false, message: 'La funcionalidad de reservas no está disponible.' });
-                            })
-                            .getResidentReservations();
-                    } else {
-                        renderReservations({ success: false, message: 'La funcionalidad de reservas no está disponible.' });
-                    }
-                    resolve();
-                }, 2500);
-            });
+        // Priorizar carga de view-inicio
+        const cachedHome = getCachedData('home-data');
+        if (cachedHome) {
+            renderHomePage({ success: true, data: cachedHome });
+            mostrarVista('app-view');
+        } else {
+            google.script.run
+                .withSuccessHandler(response => {
+                    renderHomePage(response);
+                    mostrarVista('app-view');
+                })
+                .withFailureHandler(error => handleLoadError(error, 'view-inicio'))
+                .getPublicServicesStatus();
         }
-        loadData().then(function() {
-            console.log('Datos cargados, mostrando app-view');
-            document.getElementById('loading-message').textContent = 'Finalizando...';
-            mostrarVista('app-view');
-        }).catch(function(err) {
-            console.error('Error al cargar datos:', err);
-            document.getElementById('loading-message').textContent = 'Error al cargar datos';
-            mostrarVista('app-view');
-            showAlert('Error', 'No se pudieron cargar todos los datos. Por favor, intenta de nuevo.');
-        });
 
-        // Timeout de seguridad
-        setTimeout(function() {
-            if (document.getElementById('loading-view').classList.contains('active')) {
-                console.warn('Timeout alcanzado, forzando app-view');
-                mostrarVista('app-view');
-                showAlert('Advertencia', 'La carga de datos tomó demasiado tiempo.');
-            }
-        }, 15000);
+        // Cargar perfil desde caché o servidor
+        const cachedProfile = getCachedData('profile-data');
+        if (cachedProfile) {
+            renderProfile({ success: true, data: cachedProfile });
+        } else {
+            google.script.run
+                .withSuccessHandler(renderProfile)
+                .withFailureHandler(error => handleLoadError(error, 'view-perfil'))
+                .getResidentData();
+        }
+
+        // Las demás vistas se cargan cuando se visualizan (lazy loading via IntersectionObserver)
     }
 
     // Iniciar la aplicación

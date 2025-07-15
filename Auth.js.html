@@ -1,0 +1,96 @@
+<script>
+function setupAuthEventListeners(alertModal, passwordChangeModal) {
+  const loginForm = document.getElementById('loginForm');
+  const loginButton = document.getElementById('loginButton');
+  const passwordChangeForm = document.getElementById('passwordChangeForm');
+  const savePasswordBtn = document.getElementById('savePasswordBtn');
+
+  if (loginForm && loginButton) {
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const rut = document.getElementById('rut').value.trim();
+      const password = document.getElementById('password').value;
+
+      const alertContainer = document.getElementById('login-alert-container');
+      alertContainer.innerHTML = '';
+
+      if (!rut || !password) {
+        showAlert('Error', 'Por favor, completa todos los campos.', alertModal);
+        return;
+      }
+
+      loginButton.disabled = true;
+      loginButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cargando...';
+      console.log('Intentando login con RUT:', rut);
+
+      google.script.run
+        .withSuccessHandler((response) => {
+          loginButton.disabled = false;
+          loginButton.innerHTML = 'Ingresar';
+          if (response.success) {
+            localStorage.setItem('residentRut', rut);
+            console.log('Login exitoso, cargando datos iniciales para RUT:', rut);
+            loadAndRenderInitialData(rut);
+          } else {
+            showAlert('Error', response.message, alertModal);
+          }
+        })
+        .withFailureHandler((err) => {
+          loginButton.disabled = false;
+          loginButton.innerHTML = 'Ingresar';
+          console.error('Error en login:', err);
+          showAlert('Error', 'Error de conexión. Revisa tu internet.', alertModal);
+        })
+        .login(rut, password);
+    });
+  }
+
+  if (passwordChangeForm && savePasswordBtn) {
+    passwordChangeForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      const rut = localStorage.getItem('residentRut');
+      const alertContainer = document.getElementById('password-alert-container');
+      alertContainer.innerHTML = '';
+
+      if (newPassword !== confirmPassword) {
+        showAlert('Error', 'Las contraseñas no coinciden.', alertModal);
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        showAlert('Error', 'La contraseña debe tener al menos 6 caracteres.', alertModal);
+        return;
+      }
+
+      savePasswordBtn.disabled = true;
+      savePasswordBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Guardando...';
+
+      google.script.run
+        .withSuccessHandler((response) => {
+          savePasswordBtn.disabled = false;
+          savePasswordBtn.innerHTML = 'Guardar y Entrar';
+          if (response.success) {
+            localStorage.setItem('residentRut', rut);
+            loadAndRenderInitialData(rut);
+          } else {
+            showAlert('Error', response.message, alertModal);
+          }
+        })
+        .withFailureHandler((err) => {
+          savePasswordBtn.disabled = false;
+          savePasswordBtn.innerHTML = 'Guardar y Entrar';
+          showAlert('Error', 'Error al guardar la contraseña.', alertModal);
+        })
+        .setNewPassword(rut, newPassword, confirmPassword);
+    });
+  }
+}
+
+function handleLogout() {
+  localStorage.removeItem('residentRut');
+  showView('login-view');
+  document.getElementById('loginForm').reset();
+}
+</script>
