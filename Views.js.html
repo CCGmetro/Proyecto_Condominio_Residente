@@ -5,13 +5,25 @@ function renderHomePage(data) {
 
   const { services, parking, laundry } = data;
 
-  // Lógica de Estacionamientos
+  // Lógica de Estacionamientos (Más segura)
   let parkingBadgeClass = 'text-bg-danger';
   let parkingText = `0 / ${parking?.total || 0}`;
   if (parking && parking.available > 0) {
-    parkingBadgeClass = parking.available > 3 ? 'text-bg-success' : 'text-bg-warning';
+    parkingBadgeClass = parking.available > 3 ? 'text-bg-success' : 'text-bg-warning text-dark';
     parkingText = `${parking.available} / ${parking.total}`;
   }
+
+  // Lógica de Lavandería (Más segura)
+  const laundryHtml = (laundry && Array.isArray(laundry)) ? laundry.map(item => {
+    const text = `${item.available} / ${item.total}`;
+    const badgeClass = item.available > 0 ? 'text-bg-info' : 'text-bg-secondary';
+    const icon = item.equipment === 'Lavadora' ? 'bi-water' : 'bi-wind';
+    return `
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        <div><i class="bi ${icon}"></i>${item.equipment}s Disponibles</div>
+        <span class="badge ${badgeClass} rounded-pill">${text}</span>
+      </li>`;
+  }).join('') : '<li class="list-group-item">No hay datos de lavandería.</li>';
 
   // Tarjeta de Servicios Generales
   const servicesCard = `
@@ -19,26 +31,15 @@ function renderHomePage(data) {
       <div class="card-header"><i class="bi bi-building-gear me-2"></i>Servicios Generales</div>
       <ul class="list-group list-group-flush">
         <li class="list-group-item d-flex justify-content-between align-items-center">
-          <div><i class="bi bi-p-circle-fill"></i>Estacionamientos Disponibles</div>
+          <div><i class="bi bi-p-circle-fill"></i>Estacionamientos Visita</div>
           <span class="badge ${parkingBadgeClass} rounded-pill">${parkingText}</span>
         </li>
-        ${laundry?.map(item => {
-          const text = item.available === 0 ? `0 / ${item.total}` : `${item.available} / ${item.total}`;
-          const badgeClass = item.available > 0 ? 'text-bg-info' : 'text-bg-secondary';
-          const icon = item.equipment.includes('Lavadora') ? 'bi-water' : 'bi-wind';
-          return `
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              <div><i class="bi ${icon}"></i>${item.equipment}s Disponibles</div>
-              <span class="badge ${badgeClass} rounded-pill">${text}</span>
-            </li>
-          `;
-        }).join('') || '<li class="list-group-item">No hay datos de lavandería.</li>'}
+        ${laundryHtml}
       </ul>
-    </div>
-  `;
+    </div>`;
 
-  // Tarjeta de Ascensores
-  const elevatorsCard = services?.elevators?.length ? `
+  // Tarjeta de Ascensores (Más segura)
+  const elevatorsCard = (services?.elevators && services.elevators.length > 0) ? `
     <div class="modern-card">
       <div class="card-header"><i class="bi bi-arrow-down-up me-2"></i>Estado de Ascensores</div>
       <ul class="list-group list-group-flush">
@@ -46,117 +47,56 @@ function renderHomePage(data) {
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <div><i class="bi bi-chevron-bar-contract"></i>Ascensor ${a.Número || 'N/A'}</div>
             <span class="badge ${String(a.Estado).toLowerCase().includes('operativo') ? 'text-bg-success' : 'text-bg-danger'} rounded-pill">${a.Estado || 'Sin datos'}</span>
-          </li>
-        `).join('')}
+          </li>`).join('')}
       </ul>
-    </div>
-  ` : '';
+    </div>` : '';
 
   homeContainer.innerHTML = servicesCard + elevatorsCard;
 }
 
-
 function renderProfile(data) {
   const profileContainer = document.getElementById('view-perfil');
-  if (!profileContainer || !data) return;
-
+  if (!profileContainer || !data) {
+      if(profileContainer) profileContainer.innerHTML = createEmptyState("No se pudo cargar tu perfil.");
+      return;
+  };
   const placeholderImg = 'data:image/svg+xml;charset=UTF-8,%3csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100" fill="%23cccccc" class="bi bi-person-circle" viewBox="0 0 16 16"%3e%3cpath d="M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/%3e%3cpath fill-rule="evenodd" d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z"/%3e%3c/svg%3e';
-  
   profileContainer.innerHTML = `
-    <div class="modern-card">
-        <div class="card-body text-center p-4">
-            <img src="${data.photo || placeholderImg}" alt="Foto de perfil" class="profile-pic mb-3" id="profile-image-display" onerror="this.src='${placeholderImg}'">
-            <h5 class="card-title fw-bold" style="color: var(--primary-color);">${data.name} ${data.lastName}</h5>
-            <p class="text-muted">Torre ${data.tower} - Depto ${data.department}</p>
-        </div>
-    </div>
-    <div class="modern-card">
-      <div class="card-header">Mis Datos</div>
-      <div class="card-body">
-        <form id="profileForm" novalidate>
-            <div class="mb-3">
-              <label for="phone" class="form-label">Teléfono</label>
-              <input type="tel" class="form-control" id="phone" value="${data.phone || ''}">
-            </div>
-            <div class="mb-3">
-              <label for="email" class="form-label">Correo Electrónico</label>
-              <input type="email" class="form-control" id="email" value="${data.email || ''}">
-            </div>
-            <input type="file" id="profile-photo" class="d-none" accept="image/*">
-            <div class="d-grid gap-2 mt-4">
-                <button type="button" class="btn btn-outline-secondary" id="changePhotoBtn"><i class="bi bi-camera-fill me-2"></i>Cambiar Foto</button>
-                <button type="submit" class="btn btn-primary" id="saveProfileBtn" style="background-color: var(--primary-color);"><i class="bi bi-save-fill me-2"></i>Guardar Cambios</button>
-                <button type="button" class="btn btn-danger" id="logoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión</button>
-            </div>
-        </form>
-      </div>
-    </div>
-  `;
-}
-
-function renderVisits(data) {
-  const container = document.getElementById('view-visitas');
-  if (!container) return;
-
-  if (!data || !data.length) {
-    container.innerHTML = createEmptyState('No tienes un historial de visitas.');
-    return;
-  }
-  container.innerHTML = data.map(v => `
-    <div class="modern-card">
-      <div class="card-body d-flex align-items-center">
-        <i class="bi bi-person-check-fill fs-2 me-3" style="color: var(--primary-color);"></i>
-        <div>
-          <h6 class="fw-bold mb-0">${v['Nombre Visita'] || 'N/A'}</h6>
-          <p class="text-muted small mb-1">RUT: ${v['Rut Visitante'] || 'N/A'}</p>
-          <p class="small mb-0">Ingreso: ${v['Hora Ingreso'] || 'N/A'} - ${v.Fecha || 'N/A'}</p>
-        </div>
-      </div>
-    </div>
-  `).join('');
+    <div class="modern-card"><div class="card-body text-center p-4"><img src="${data.photo || placeholderImg}" alt="Foto de perfil" class="mb-3" id="profile-image-display" onerror="this.src='${placeholderImg}'" style="width:120px; height:120px; border-radius:50%; object-fit:cover;"><h5 class="card-title fw-bold" style="color: var(--primary-color);">${data.name || ''} ${data.lastName || ''}</h5><p class="text-muted">Torre ${data.tower || ''} - Depto ${data.department || ''}</p></div></div>
+    <div class="modern-card"><div class="card-header">Mis Datos</div><div class="card-body"><form id="profileForm" novalidate><div class="mb-3"><label for="phone" class="form-label">Teléfono</label><input type="tel" class="form-control" id="phone" value="${data.phone || ''}"></div><div class="mb-3"><label for="email" class="form-label">Correo Electrónico</label><input type="email" class="form-control" id="email" value="${data.email || ''}"></div><input type="file" id="profile-photo" class="d-none" accept="image/*"><div class="d-grid gap-2 mt-4"><button type="button" class="btn btn-outline-secondary" id="changePhotoBtn"><i class="bi bi-camera-fill me-2"></i>Cambiar Foto</button><button type="submit" class="btn btn-primary" id="saveProfileBtn" style="background-color: var(--primary-color);"><i class="bi bi-save-fill me-2"></i>Guardar Cambios</button><button type="button" class="btn btn-danger" id="logoutBtn"><i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión</button></div></form></div></div>`;
 }
 
 function renderPackages(data) {
   const container = document.getElementById('view-encomiendas');
   if (!container) return;
-  
   const pendingPackages = data?.filter(p => p.Estado?.toUpperCase() === 'PENDIENTE') || [];
-
   if (!pendingPackages.length) {
-    container.innerHTML = createEmptyState('¡Felicidades! No tienes encomiendas pendientes.');
+    container.innerHTML = createEmptyState('¡Felicidades! No tienes encomiendas pendientes.', 'bi-check2-circle');
     return;
   }
   container.innerHTML = pendingPackages.map(p => `
-    <div class="modern-card">
-      <div class="card-body d-flex align-items-center">
-        <i class="bi bi-box2-heart-fill fs-2 me-3 text-warning"></i>
-        <div>
-          <h6 class="fw-bold mb-0">${p['Descripción'] || 'N/A'}</h6>
-          <p class="small text-muted mb-0">Recibido: ${p['Fecha Recepción'] || 'N/A'} a las ${p['Hora Recepción'] || 'N/A'}</p>
-        </div>
-      </div>
-    </div>
-  `).join('');
+    <div class="modern-card"><div class="card-body d-flex align-items-center"><i class="bi bi-box2-heart-fill fs-2 me-3 text-warning"></i><div><h6 class="fw-bold mb-0">${p['Descripción'] || 'N/A'}</h6><p class="small text-muted mb-0">Recibido: ${p['Fecha Recepción'] || 'N/A'} a las ${p['Hora Recepción'] || 'N/A'}</p></div></div></div>`).join('');
+}
+
+function renderVisits(data) {
+  const container = document.getElementById('view-visitas');
+  if (!container) return;
+  if (!data || !data.length) {
+    container.innerHTML = createEmptyState('No tienes un historial de visitas.');
+    return;
+  }
+  container.innerHTML = data.map(v => `
+    <div class="modern-card"><div class="card-body d-flex align-items-center"><i class="bi bi-person-check-fill fs-2 me-3" style="color: var(--primary-color);"></i><div><h6 class="fw-bold mb-0">${v['Nombre Visita'] || 'N/A'}</h6><p class="text-muted small mb-1">RUT: ${v['Rut Visitante'] || 'N/A'}</p><p class="small mb-0">Ingreso: ${v['Hora Ingreso'] || 'N/A'} - ${v.Fecha || 'N/A'}</p></div></div></div>`).join('');
 }
 
 function renderMessages(data) {
-  const container = document.getElementById('view-mensajes');
-  if (!container) return;
-
-  if (!data || !data.length) {
-    container.innerHTML = createEmptyState('No hay mensajes de la administración.');
-    return;
-  }
-  container.innerHTML = data.map(m => `
-    <div class="modern-card message-card" data-title="${m.Título}" data-message="${m.Mensaje}" data-date="${m.Fecha}" data-seen="${m.Visto}" data-message-id="${m.ID}">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start">
-          <h6 class="fw-bold mb-1 ${m.Visto !== 'SÍ' ? 'text-primary' : ''}">${m.Título || 'Sin Título'}</h6>
-          <span class="badge text-bg-light text-nowrap ms-3">${m.Fecha || ''}</span>
-        </div>
-        <p class="card-text text-muted small text-truncate">${m.Mensaje || 'Sin contenido'}</p>
-      </div>
-    </div>
-  `).join('');
+    const container = document.getElementById('view-mensajes');
+    if (!container) return;
+    if (!data || !data.length) {
+        container.innerHTML = createEmptyState('No hay mensajes de la administración.');
+        return;
+    }
+    container.innerHTML = data.map(m => `
+        <div class="modern-card message-card" data-title="${m.Título}" data-message="${m.Mensaje}" data-date="${m.Fecha}" data-seen="${m.Visto}" data-message-id="${m.ID}"><div class="card-body"><div class="d-flex justify-content-between align-items-start"><h6 class="fw-bold mb-1 ${m.Visto !== 'SÍ' ? 'text-primary' : ''}">${m.Título || 'Sin Título'}</h6><span class="badge text-bg-light text-nowrap ms-3">${m.Fecha || ''}</span></div><p class="card-text text-muted small text-truncate">${m.Mensaje || 'Sin contenido'}</p></div></div>`).join('');
 }
 </script>

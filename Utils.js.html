@@ -1,63 +1,47 @@
 <script>
 function showAlert(title, message, modalInstance) {
-  if (!modalInstance || !modalInstance._element) return;
-  const titleEl = document.getElementById('alertModalTitle');
-  const bodyEl = document.getElementById('alertModalBody');
-  if (titleEl && bodyEl) {
-    titleEl.textContent = title;
-    bodyEl.textContent = message;
-    modalInstance.show();
-  }
-}
-
-function mostrarAlertaInterna(containerId, message, type = 'danger') {
-  const container = document.getElementById(containerId);
-  if (container) {
-    container.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show mt-3" role="alert">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-  }
+  if (!modalInstance) return;
+  document.getElementById('alertModalTitle').textContent = title;
+  document.getElementById('alertModalBody').textContent = message;
+  modalInstance.show();
 }
 
 function showButtonLoading(button, isLoading, originalText) {
   if (!button) return;
-  if (!button.dataset.originalHtml) button.dataset.originalHtml = button.innerHTML;
   button.disabled = isLoading;
-  button.innerHTML = isLoading
-    ? `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cargando...`
-    : button.dataset.originalHtml;
+  if (isLoading) {
+    button.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Cargando...`;
+  } else {
+    button.innerHTML = originalText;
+  }
 }
 
 function formatoRutLive(e) {
-  let value = e.target.value.replace(/[^\dkK]/g, '').toUpperCase();
-  if (value.length > 1) {
-    const body = value.slice(0, -1);
-    const dv = value.slice(-1);
-    const formattedBody = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    e.target.value = formattedBody + '-' + dv;
+  let v = e.target.value.replace(/[^\dkK]/g, '').toUpperCase();
+  if (v.length > 1) {
+    let body = v.slice(0, -1);
+    let dv = v.slice(-1);
+    body = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    e.target.value = body + '-' + dv;
   } else {
-    e.target.value = value;
+    e.target.value = v;
   }
 }
 
 function getCachedData(key) {
-  const data = localStorage.getItem(key);
-  return data ? JSON.parse(data) : null;
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (e) { return null; }
 }
 
 function setCachedData(key, data) {
   try {
     localStorage.setItem(key, JSON.stringify(data));
-  } catch (e) {
-    console.error('Error al guardar en caché:', e);
-  }
+  } catch (e) { console.error('Error al guardar en caché:', e); }
 }
 
-function createEmptyState(message) {
-  return `<div class="text-center text-muted p-5"><i class="bi bi-info-circle fs-2"></i><p class="mt-2">${message}</p></div>`;
-}
-
-function handleLoadError(error, viewId) {
-  console.error(`Error al cargar datos para ${viewId}:`, error);
-  const container = document.getElementById(viewId);
-  if (container) container.innerHTML = createEmptyState('Error al cargar. Intenta de nuevo.');
+function createEmptyState(message, icon = 'bi-info-circle') {
+  return `<div class="text-center text-muted p-5"><i class="bi ${icon} fs-2"></i><p class="mt-2">${message}</p></div>`;
 }
 </script>

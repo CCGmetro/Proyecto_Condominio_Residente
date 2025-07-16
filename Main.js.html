@@ -1,47 +1,23 @@
 <script>
-let alertModal, passwordChangeModal, messageDetailModal;
+let alertModal;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (typeof bootstrap === 'undefined') {
-    console.error('Bootstrap no está cargado. La aplicación no funcionará correctamente.');
-    alert('Error: No se pudo cargar Bootstrap. Revisa tu conexión o contacta al soporte.');
+    alert('Error: No se pudo cargar la aplicación. Revisa tu conexión.');
     return;
   }
+  alertModal = new bootstrap.Modal(document.getElementById('alertModal'));
 
-  const alertModalEl = document.getElementById('alertModal');
-  const passwordChangeModalEl = document.getElementById('passwordChangeModal');
-  const messageDetailModalEl = document.getElementById('messageDetailModal');
-  
-  alertModal = alertModalEl ? new bootstrap.Modal(alertModalEl) : null;
-  passwordChangeModal = passwordChangeModalEl ? new bootstrap.Modal(passwordChangeModalEl) : null;
-  messageDetailModal = messageDetailModalEl ? new bootstrap.Modal(messageDetailModalEl) : null;
-
-  setupAuthEventListeners(alertModal, passwordChangeModal);
+  setupAuthEventListeners(alertModal);
   setupNavigation();
   setupUIEventListeners();
 
   const residentRut = localStorage.getItem('residentRut');
-  console.log('RUT del residente en localStorage:', residentRut);
   if (residentRut) {
-    const cachedData = getCachedData('appData');
-if (cachedData && Array.isArray(cachedData.laundry)) {
-  renderApp(cachedData);
-} else {
-  localStorage.removeItem('appData');
-  loadAndRenderInitialData(residentRut);
-}
+    loadAndRenderInitialData(residentRut);
   } else {
     showView('login-view');
   }
-
-  setTimeout(() => {
-    const loadingView = document.getElementById('loading-view');
-    if (loadingView?.classList.contains('active')) {
-      console.warn('Timeout: Carga inicial no completada');
-      loadingView.classList.remove('active');
-      showView('login-view');
-    }
-  }, 10000);
 });
 
 function showView(viewId) {
@@ -52,35 +28,49 @@ function showView(viewId) {
 
 function loadAndRenderInitialData(rut) {
   showView('loading-view');
-  document.getElementById('loading-message').textContent = 'Cargando datos...';
   
   google.script.run
     .withSuccessHandler((response) => {
-      console.log('Respuesta recibida:', response);
       if (response && response.success) {
         setCachedData('appData', response.data);
         renderApp(response.data);
       } else {
-        console.error('Respuesta fallida:', response);
-        showAlert('Error', response?.message || 'Error al cargar datos.', alertModal);
+        showAlert('Error de Datos', response?.message || 'No se pudieron cargar los datos.', alertModal);
         showView('login-view');
       }
     })
     .withFailureHandler((err) => {
-      console.error('Error en la llamada:', err.message || err);
-      showAlert('Error', 'Error de conexión. Revisa tu internet.', alertModal);
-      showView('login-view');
+      const cachedData = getCachedData('appData');
+      if (cachedData) {
+        showAlert('Modo Offline', 'No se pudo conectar. Mostrando últimos datos guardados.', alertModal);
+        renderApp(cachedData);
+      } else {
+        showAlert('Error de Conexión', 'No se pudo conectar y no hay datos guardados.', alertModal);
+        showView('login-view');
+      }
     })
     .getInitialAppData(rut);
 }
 
 function renderApp(data) {
-  console.log("💡 Datos para renderApp:", data);
-  renderHomePage(data);
-  renderPackages(data.packages);
-  renderVisits(data.visits);
-  renderMessages(data.messages);
-  renderProfile(data.profile);
+  try {
+    if (!data || typeof data !== 'object') {
+        throw new Error("Los datos recibidos no son válidos.");
+    }
+    // Renderizar cada componente de forma segura
+    try { renderHomePage(data); } catch (e) { console.error("Error en renderHomePage:", e); }
+    try { renderPackages(data.packages); } catch (e) { console.error("Error en renderPackages:", e); }
+    try { renderVisits(data.visits); } catch (e) { console.error("Error en renderVisits:", e); }
+    try { renderMessages(data.messages); } catch (e) { console.error("Error en renderMessages:", e); }
+    try { renderProfile(data.profile); } catch (e) { console.error("Error en renderProfile:", e); }
+  } catch(e) {
+      console.error("Error fatal en renderApp:", e);
+      showAlert('Error Crítico', 'No se pudo mostrar la información. ' + e.message, alertModal);
+      handleLogout();
+      return;
+  }
+  
+  // Si todo (o parte) se renderizó sin detener el script, ahora sí cambiamos la vista.
   showView('main-view');
 }
 
@@ -91,52 +81,26 @@ function setupNavigation() {
       e.preventDefault();
       const viewId = link.dataset.view;
       const title = link.dataset.title;
-
       navLinks.forEach(l => l.classList.remove('active'));
       link.classList.add('active');
-
       document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
-      const viewContent = document.getElementById('view-' + viewId);
-      if (viewContent) {
-        viewContent.classList.add('active');
-        document.getElementById('header-title').textContent = title;
-        window.scrollTo(0, 0);
-      }
+      document.getElementById('view-' + viewId).classList.add('active');
+      document.getElementById('header-title').textContent = title;
     });
   });
 }
 
 function setupUIEventListeners() {
-  const mainView = document.getElementById('main-view');
-  if (!mainView) return;
+  const rutInput = document.getElementById('rut');
+  if (rutInput) {
+    rutInput.addEventListener('input', formatoRutLive);
+  }
 
-  mainView.addEventListener('click', (e) => {
-    if (e.target.id === 'logoutBtn') handleLogout();
-    if (e.target.id === 'changePhotoBtn') document.getElementById('profile-photo')?.click();
-    const messageCard = e.target.closest('.message-card');
-    if (messageCard) {
-      const { title, message, date, seen, messageId } = messageCard.dataset;
-      showMessageDetail(title, message, date, seen, messageDetailModal);
-      if (seen !== 'SÍ') {
-        google.script.run
-          .withSuccessHandler(() => {
-            messageCard.classList.remove('fw-bold');
-            messageCard.dataset.seen = 'SÍ';
-          })
-          .markMessageAsRead(messageId);
-      }
+  document.getElementById('main-view').addEventListener('click', (e) => {
+    const logoutButton = e.target.closest('#logoutBtn');
+    if (logoutButton) {
+      handleLogout();
     }
   });
-
-  mainView.addEventListener('submit', (e) => {
-    if (e.target.id === 'profileForm') handleProfileUpdate(e, alertModal);
-  });
-
-  mainView.addEventListener('change', (e) => {
-    if (e.target.id === 'profile-photo') handleFotoUpload(e, alertModal);
-  });
-
-  const rutInput = document.getElementById('rut');
-  if (rutInput) rutInput.addEventListener('input', formatoRutLive);
 }
 </script>
