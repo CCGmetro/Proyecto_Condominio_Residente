@@ -1,14 +1,19 @@
 <script>
-let alertModal;
+let alertModal, passwordChangeModal, updatePasswordModal;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (typeof bootstrap === 'undefined') {
     alert('Error: No se pudo cargar la aplicación. Revisa tu conexión.');
     return;
   }
+  
+  // Inicializamos todos los modales
   alertModal = new bootstrap.Modal(document.getElementById('alertModal'));
+  passwordChangeModal = new bootstrap.Modal(document.getElementById('passwordChangeModal'));
+  updatePasswordModal = new bootstrap.Modal(document.getElementById('updatePasswordModal'));
 
-  setupAuthEventListeners(alertModal);
+  // Pasamos todos los modales a la configuración de listeners
+  setupAuthEventListeners(alertModal, passwordChangeModal, updatePasswordModal); 
   setupNavigation();
   setupUIEventListeners();
 
@@ -21,14 +26,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function showView(viewId) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  const view = document.getElementById(viewId);
-  if (view) view.classList.add('active');
+  const views = document.querySelectorAll('.view');
+  views.forEach(v => {
+    v.classList.remove('active', 'fade-in');
+    v.style.display = 'none';
+  });
+  const viewToShow = document.getElementById(viewId);
+  if (viewToShow) {
+    const isOverlay = viewId === 'login-view' || viewId === 'loading-view';
+    viewToShow.style.display = isOverlay ? 'flex' : 'block';
+    requestAnimationFrame(() => {
+      viewToShow.classList.add('active', 'fade-in');
+    });
+  }
 }
 
 function loadAndRenderInitialData(rut) {
   showView('loading-view');
-  
   google.script.run
     .withSuccessHandler((response) => {
       if (response && response.success) {
@@ -36,7 +50,7 @@ function loadAndRenderInitialData(rut) {
         renderApp(response.data);
       } else {
         showAlert('Error de Datos', response?.message || 'No se pudieron cargar los datos.', alertModal);
-        showView('login-view');
+        handleLogout();
       }
     })
     .withFailureHandler((err) => {
@@ -46,7 +60,7 @@ function loadAndRenderInitialData(rut) {
         renderApp(cachedData);
       } else {
         showAlert('Error de Conexión', 'No se pudo conectar y no hay datos guardados.', alertModal);
-        showView('login-view');
+        handleLogout();
       }
     })
     .getInitialAppData(rut);
@@ -54,23 +68,23 @@ function loadAndRenderInitialData(rut) {
 
 function renderApp(data) {
   try {
-    if (!data || typeof data !== 'object') {
-        throw new Error("Los datos recibidos no son válidos.");
-    }
-    // Renderizar cada componente de forma segura
+    if (!data || typeof data !== 'object') { throw new Error("Los datos recibidos no son válidos."); }
     try { renderHomePage(data); } catch (e) { console.error("Error en renderHomePage:", e); }
     try { renderPackages(data.packages); } catch (e) { console.error("Error en renderPackages:", e); }
     try { renderVisits(data.visits); } catch (e) { console.error("Error en renderVisits:", e); }
     try { renderMessages(data.messages); } catch (e) { console.error("Error en renderMessages:", e); }
     try { renderProfile(data.profile); } catch (e) { console.error("Error en renderProfile:", e); }
   } catch(e) {
-      console.error("Error fatal en renderApp:", e);
-      showAlert('Error Crítico', 'No se pudo mostrar la información. ' + e.message, alertModal);
-      handleLogout();
-      return;
+    console.error("Error fatal en renderApp:", e);
+    showAlert('Error Crítico', 'No se pudo mostrar la información. ' + e.message, alertModal);
+    handleLogout();
+    return;
   }
-  
-  // Si todo (o parte) se renderizó sin detener el script, ahora sí cambiamos la vista.
+  document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-inicio')?.classList.add('active');
+  document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+  document.querySelector('.nav-link[data-view="inicio"]')?.classList.add('active');
+  document.getElementById('header-title').textContent = 'Inicio';
   showView('main-view');
 }
 
@@ -84,7 +98,7 @@ function setupNavigation() {
       navLinks.forEach(l => l.classList.remove('active'));
       link.classList.add('active');
       document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
-      document.getElementById('view-' + viewId).classList.add('active');
+      document.getElementById('view-' + viewId)?.classList.add('active');
       document.getElementById('header-title').textContent = title;
     });
   });
@@ -92,13 +106,10 @@ function setupNavigation() {
 
 function setupUIEventListeners() {
   const rutInput = document.getElementById('rut');
-  if (rutInput) {
-    rutInput.addEventListener('input', formatoRutLive);
-  }
-
-  document.getElementById('main-view').addEventListener('click', (e) => {
-    const logoutButton = e.target.closest('#logoutBtn');
-    if (logoutButton) {
+  if (rutInput) { rutInput.addEventListener('input', formatoRutLive); }
+  
+  document.body.addEventListener('click', (e) => {
+    if (e.target.closest('#logoutBtn')) {
       handleLogout();
     }
   });

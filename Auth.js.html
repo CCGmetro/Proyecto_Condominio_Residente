@@ -1,45 +1,130 @@
 <script>
-function setupAuthEventListeners(alertModal) {
+function setupAuthEventListeners(alertModal, passwordChangeModal, updatePasswordModal) {
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {
-    loginForm.addEventListener('submit', (e) => handleLogin(e, alertModal));
+    loginForm.addEventListener('submit', (e) => handleLogin(e, alertModal, passwordChangeModal));
+  }
+  const passwordChangeForm = document.getElementById('passwordChangeForm');
+  if (passwordChangeForm) {
+    passwordChangeForm.addEventListener('submit', (e) => handleSetNewPassword(e, passwordChangeModal, alertModal));
+  }
+  // Listener para el nuevo formulario de actualización
+  const updatePasswordForm = document.getElementById('updatePasswordForm');
+  if (updatePasswordForm) {
+    updatePasswordForm.addEventListener('submit', (e) => handleUpdatePassword(e, updatePasswordModal, alertModal));
   }
 }
 
-function handleLogin(e, alertModal) {
+function handleLogin(e, alertModal, passwordChangeModal) {
   e.preventDefault();
   const loginButton = document.getElementById('loginButton');
-  const rut = document.getElementById('rut').value.trim();
-  const password = document.getElementById('password').value;
+  const rutInput = document.getElementById('rut');
+  const passwordInput = document.getElementById('password');
+  const rut = rutInput.value.trim();
+  const password = passwordInput.value.trim();
 
   if (!rut || !password) {
-    showAlert('Atención', 'Por favor, completa todos los campos.', alertModal);
+    showAlert('Atención', 'Debes ingresar tu RUT y contraseña.', alertModal);
     return;
   }
 
   showButtonLoading(loginButton, true, 'Ingresar');
   localStorage.removeItem('appData'); 
-
   google.script.run
     .withSuccessHandler((response) => {
       showButtonLoading(loginButton, false, 'Ingresar');
       if (response.success) {
-        localStorage.setItem('residentRut', response.rut);
-        loadAndRenderInitialData(response.rut);
+        if (response.firstLogin) {
+          passwordChangeModal.show();
+        } else {
+          localStorage.setItem('residentRut', response.rut);
+          loadAndRenderInitialData(response.rut);
+        }
       } else {
-        showAlert('Error de Ingreso', response.message, alertModal);
+        showAlert('Error de Ingreso', response?.message || 'RUT o contraseña incorrectos.', alertModal);
       }
     })
     .withFailureHandler((err) => {
       showButtonLoading(loginButton, false, 'Ingresar');
-      showAlert('Error de Conexión', 'No se pudo comunicar con el servidor. Intenta de nuevo.', alertModal);
+      showAlert('Error de Conexión', 'No se pudo comunicar con el servidor.', alertModal);
     })
     .login(rut, password);
 }
 
-function handleLogout() {
+function handleSetNewPassword(e, passwordChangeModal, alertModal) {
+    e.preventDefault();
+    const savePasswordBtn = document.getElementById('savePasswordBtn');
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    
+    showButtonLoading(savePasswordBtn, true, 'Guardando');
+    
+    google.script.run
+        .withSuccessHandler((response) => {
+            showButtonLoading(savePasswordBtn, false, 'Guardar y Entrar');
+            if(response.success) {
+                passwordChangeModal.hide();
+                showAlert('Éxito', 'Tu contraseña ha sido creada. ¡Bienvenido!', alertModal);
+                localStorage.setItem('residentRut', response.rut);
+                loadAndRenderInitialData(response.rut);
+            } else {
+                const alertContainer = document.getElementById('password-alert-container');
+                if(alertContainer) {
+                    alertContainer.innerHTML = `<div class="alert alert-danger mt-3" style="font-size: 1.2rem;">${response.message}</div>`;
+                }
+            }
+        })
+        .withFailureHandler((err) => {
+            showButtonLoading(savePasswordBtn, false, 'Guardar y Entrar');
+            const alertContainer = document.getElementById('password-alert-container');
+            if(alertContainer) {
+                alertContainer.innerHTML = `<div class="alert alert-danger mt-3" style="font-size: 1.2rem;">Error de conexión.</div>`;
+            }
+        })
+        .setNewPassword(newPassword, confirmPassword);
+}
+
+function handleUpdatePassword(e, updatePasswordModal, alertModal) {
+  e.preventDefault();
+  const updateBtn = document.getElementById('saveUpdatePasswordBtn');
+  const currentPassword = document.getElementById('current-password').value;
+  const newPassword = document.getElementById('update-new-password').value;
+  const confirmPassword = document.getElementById('update-confirm-password').value;
+  const rut = localStorage.getItem('residentRut');
+
+  showButtonLoading(updateBtn, true, 'Actualizando');
+
+  google.script.run
+    .withSuccessHandler((response) => {
+      showButtonLoading(updateBtn, false, 'Actualizar Contraseña');
+      if (response.success) {
+        updatePasswordModal.hide();
+        showAlert('Éxito', 'Tu contraseña ha sido actualizada.', alertModal);
+        document.getElementById('updatePasswordForm').reset();
+      } else {
+        const alertContainer = document.getElementById('update-password-alert-container');
+        if (alertContainer) {
+          alertContainer.innerHTML = `<div class="alert alert-danger mt-3" style="font-size: 1.2rem;">${response.message}</div>`;
+        }
+      }
+    })
+    .withFailureHandler((err) => {
+      showButtonLoading(updateBtn, false, 'Actualizar Contraseña');
+      const alertContainer = document.getElementById('update-password-alert-container');
+      if (alertContainer) {
+        alertContainer.innerHTML = `<div class="alert alert-danger mt-3" style="font-size: 1.2rem;">Error de conexión.</div>`;
+      }
+    })
+    .updateUserPassword(rut, currentPassword, newPassword, confirmPassword);
+}
+
+// --- TU FUNCIÓN DE LOGOUT OPERATIVA ---
+function handleLogout(alertModal) {
   localStorage.removeItem('residentRut');
   localStorage.removeItem('appData');
-  window.location.reload();
+  showAlert('Sesión Finalizada', 'Has cerrado sesión. Serás redirigido.', alertModal);
+  setTimeout(() => {
+    showView('login-view');
+  }, 2000);
 }
 </script>
